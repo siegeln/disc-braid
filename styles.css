@@ -185,3 +185,17 @@ button:disabled { opacity: 0.4; cursor: default; }
 .seg button:last-child { border-radius: 0 8px 8px 0; }
 .seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--panel); }
 .has-3d .seg.only-3d { display: inline-flex; }
+.idle-ring { fill: none; stroke: var(--error); stroke-width: 2.5; stroke-dasharray: 4 3; pointer-events: none; }
+.warn.idle { margin: 0; padding: 8px 10px; border: 1px solid var(--error); border-radius: 8px; }
+.walk { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.walk-label { min-width: 12em; text-align: center; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.walk button { min-width: 44px; min-height: 40px; }
+.walk-say { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 0.88rem; }
+.walk-say .walk-head { margin: 0 0 4px; font-weight: 600; }
+.walk-say ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.walk-say li.turn { list-style: none; margin-left: -20px; color: var(--muted); }
+.strand.moving { stroke: var(--accent); stroke-opacity: 1; stroke-width: 3; }
+/* iOS zooms the page into any field under 16px; avoid that on touch screens. */
+@media (pointer: coarse) {
+  select, textarea, input, .move-row select, .turn-row select { font-size: 16px; }
+}

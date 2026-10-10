@@ -44,12 +44,16 @@ export function buildSurface({ stitches, stepY, colors, G, twist, maxHeight = In
   if (steps <= 2 * trim) return null;
   const yHi = stepY[steps - trim];
   // Only the newest part fits on screen, so only build that much.
-  const yLo = Math.max(stepY[trim], yHi - maxHeight);
+  let yLo = Math.max(stepY[trim], yHi - maxHeight);
 
   // Long cords get fewer pixels round the cord, to keep the texture a
   // manageable size (and within what phones' graphics chips accept).
   const MAX_PIXELS = 1.4e6;
-  const W = Math.max(16 * G, Math.min(resolution, Math.floor(Math.sqrt(MAX_PIXELS / Math.max(0.01, yHi - yLo))), Math.floor(4096 / Math.max(0.01, yHi - yLo))));
+  const MAX_SIDE = 4096;
+  const len = Math.max(0.01, yHi - yLo);
+  const W = Math.max(32, Math.min(resolution, Math.max(16 * G, Math.floor(Math.sqrt(MAX_PIXELS / len))), Math.floor(MAX_SIDE / len)));
+  // If even that is too tall, keep the newest part of the cord.
+  if (len * W > MAX_SIDE) yLo = yHi - MAX_SIDE / W;
   const H = Math.max(1, Math.ceil((yHi - yLo) * W));
   const pad = 0.05; // circumferences of stitches kept beyond each end
   const used = stitches.filter((s) => s.y > yLo - pad && s.y < yHi + pad);
@@ -201,7 +205,9 @@ export function buildSurface({ stitches, stepY, colors, G, twist, maxHeight = In
     albedo[o] = c[0] * m; albedo[o + 1] = c[1] * m; albedo[o + 2] = c[2] * m;
     data[o] = c[0] * m * lit + sp; data[o + 1] = c[1] * m * lit + sp; data[o + 2] = c[2] * m * lit + sp;
   }
-  return { width: W, height: H, data, albedo, heightMap: height, normal, circumference: W };
+  const strandAt = new Int16Array(W * H);
+  for (let k = 0; k < W * H; k++) strandAt[k] = owner[k] < 0 ? -1 : used[owner[k]].strand;
+  return { width: W, height: H, data, albedo, heightMap: height, normal, strandAt, circumference: W };
 }
 
 function textureCanvas(surface) {

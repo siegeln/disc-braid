@@ -8,7 +8,7 @@ import { buildSurface, drawCord, drawUnrolled, trimSteps } from './render.js';
 import { createCordView } from './cord3d.js';
 import {
   DEFAULT_RULE, POSITIONS, RULE_PRESETS, cloneRule, describeMove, describeTurn, distLabel,
-  encodeRule, resolveDist, ruleWarnings, simulate as simulateRule,
+  encodeRule, resolveDist, ruleWarnings, simulate as simulateRule, stepDetails,
 } from './rules.js';
 
 const $ = (id) => document.getElementById(id);
@@ -34,7 +34,7 @@ function loadFromHash() {
   state.colors = p.colors;
   if (p.rounds) state.rounds = p.rounds;
   if (p.twist !== undefined) state.twist = p.twist;
-  state.rule = p.rule;
+  state.rule = cloneRule(p.rule);
   for (const c of p.colors) if (!state.palette.includes(c)) state.palette.push(c);
 }
 
@@ -61,25 +61,80 @@ function paint(ids) {
   const color = state.palette[state.brush];
   let changed = false;
   for (const id of ids) if (state.colors[id] !== color) { state.colors[id] = color; changed = true; }
-  if (changed) update();
+  if (!changed) return;
+  // While dragging, only redraw the disk; rebuild the cord once the finger lifts.
+  if (painting) { paintedWhileDragging = true; renderDisk(); } else update();
 }
 
-// Drag across strands to paint several. Hit-test by position, because touch
-// pointers don't fire enter events on other elements.
+// Drag across strands to paint several. The disk captures the pointer (the knob
+// it started on is redrawn while painting), and strands are found by position.
 let painting = false;
-window.addEventListener('pointerup', () => { painting = false; });
-window.addEventListener('pointercancel', () => { painting = false; });
+let paintedWhileDragging = false;
+function endPaint() {
+  painting = false;
+  if (paintedWhileDragging) { paintedWhileDragging = false; update(); }
+}
+window.addEventListener('pointerup', endPaint);
+window.addEventListener('pointercancel', endPaint);
 function paintUnderPointer(e) {
   if (!painting) return;
   const id = document.elementFromPoint(e.clientX, e.clientY)?.getAttribute?.('data-id');
   if (id != null) paint([Number(id)]);
 }
 
-function renderDisk() {
+// The disk can show the set-up (step 0) or any later step of the braid, with
+// the strands where they are by then and the disk turned the way the braider
+// would have it. Arrows show the moves about to be made.
+
+function strandAngles(groups, G) {
+  const spread = Math.min(7, 360 / G / 4);
+  const at = new Map();
+  groups.forEach((list, g) => list.forEach((id, i) => at.set(id, dotAngle(g, G) + spread * (list.length - 1 - 2 * i))));
+  return at;
+}
+
+// Arrow geometry for a strand travelling `sign` (1 = counter-clockwise) from
+// angle a to angle b: a curve that hugs the rim for short moves and passes
+// near the centre for moves across the disk.
+function travel(a, b, sign) {
+  const arc = ((((b - a) * sign) % 360) + 360) % 360 || 360;
+  const mid = a + (sign * arc) / 2;
+  const pull = Math.max(0.24, Math.cos(((arc / 2) * Math.PI) / 180) * 0.85);
+  return { mid, pull };
+}
+
+function bezier(p0, c, p1, t) {
+  const u = 1 - t;
+  return [u * u * p0[0] + 2 * u * t * c[0] + t * t * p1[0], u * u * p0[1] + 2 * u * t * c[1] + t * t * p1[1]];
+}
+
+let walkDetails = null;
+function currentDetails() {
+  const n = state.colors.length;
+  if (!walkDetails || walkDetails.key !== walk.step) {
+    walkDetails = { key: walk.step, ...stepDetails({ strands: n, rule: state.rule, step: walk.step }) };
+  }
+  return walkDetails;
+}
+
+/**
+ * Draw the disk. `frame` (optional, for animation) overrides what is shown:
+ *   { groups, rot, moving: { strand, from, to, sign, t }, from: Map, to: Map, t }
+ */
+function renderDisk(frame) {
   const svg = $('disk');
   svg.replaceChildren();
   const n = state.colors.length;
   const G = groupCount(n);
+  const d = currentDetails();
+  const setup = walk.step === 0 && !frame;
+  const rot = frame ? frame.rot : (d.top * 360) / G;
+  const R = (a) => a + rot;
+  const knobR = n > 24 ? 9 : 11;
+
+  const defs = el('defs', {}, svg);
+  const marker = el('marker', { id: 'arrowhead', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse' }, defs);
+  el('path', { d: 'M0,0 L10,5 L0,10 z', class: 'arrow-head' }, marker);
 
   el('circle', { r: 160, class: 'disk-face' }, svg);
   el('circle', { r: 26, class: 'disk-hole' }, svg);
@@ -88,68 +143,185 @@ function renderDisk() {
   const rt = el('text', { x: 190, y: -186, class: 'side-label', 'text-anchor': 'end' }, svg); rt.textContent = 'R';
 
   for (let i = 0; i < 32; i++) {
-    const a = 90 - (i + 0.5) * (360 / 32);
+    const a = R(90 - (i + 0.5) * (360 / 32));
     const [x1, y1] = polar(146, a);
     const [x2, y2] = polar(160, a);
     el('line', { x1, y1, x2, y2, class: 'slot' }, svg);
   }
 
+  const groups = frame ? frame.groups : d.before;
   for (let g = 0; g < G; g++) {
-    const a = dotAngle(g, G);
-    const [x, y] = polar(132, a);
-    const dot = el('g', { class: 'dot', tabindex: 0, role: 'button', 'aria-label': `Pair ${g + 1}: paint both strands` }, svg);
+    const [x, y] = polar(132, R(dotAngle(g, G)));
+    const dot = el('g', { class: 'dot', tabindex: 0, role: 'button', 'aria-label': `Pair at dot ${g + 1}: paint both strands` }, svg);
     el('circle', { cx: x, cy: y, r: 10 }, dot);
-    const t = el('text', { x, y: y + 4, 'text-anchor': 'middle' }, dot);
-    t.textContent = g + 1;
-    const both = () => paint([2 * g, 2 * g + 1]);
+    el('text', { x, y: y + 4, 'text-anchor': 'middle' }, dot).textContent = g + 1;
+    const both = () => paint(groups[g].slice());
     dot.addEventListener('click', both);
     dot.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); both(); } });
   }
 
-  for (const s of strandLayout(n)) {
-    const [x0, y0] = polar(30, s.angle);
-    const [x1, y1] = polar(168, s.angle);
-    el('line', { x1: x0, y1: y0, x2: x1, y2: y1, stroke: state.colors[s.id], class: 'thread' }, svg);
-    const [cx, cy] = polar(178, s.angle);
-    const knob = el('circle', {
-      cx, cy, r: n > 24 ? 9 : 11, fill: state.colors[s.id], class: 'strand', tabindex: 0, role: 'button', 'data-id': s.id,
-      'aria-label': `Strand ${s.label}`,
-    }, svg);
-    el('title', {}, knob).textContent = s.label;
-    knob.addEventListener('pointerdown', (e) => { e.preventDefault(); painting = true; paint([s.id]); });
-    knob.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); paint([s.id]); } });
-    if (state.labels) {
-      const [lx, ly] = polar(199, s.angle);
-      const t = el('text', { x: lx, y: ly + 4, 'text-anchor': 'middle', class: 'strand-label' }, svg);
-      t.textContent = s.label;
+  // Where each strand is drawn.
+  const at = frame ? new Map() : strandAngles(groups, G);
+  const knobXY = new Map();
+  if (frame) {
+    for (const [id, a0] of frame.from) {
+      const a1 = frame.to.get(id);
+      let da = ((((a1 - a0) % 360) + 540) % 360) - 180;
+      at.set(id, a0 + da * frame.t);
+    }
+    if (frame.moving) {
+      const m = frame.moving;
+      const { mid, pull } = travel(m.from, m.to, m.sign);
+      const p = bezier(polar(178, R(m.from)), polar(178 * pull, R(mid)), polar(178, R(m.to)), m.t);
+      knobXY.set(m.strand, p);
     }
   }
-  drawMoveArrows(svg, n);
+  const labels = new Map(strandLayout(n).map((l) => [l.id, l.label]));
+  const movingIds = new Set(frame ? [] : d.moves.map((m) => m.strand));
+
+  for (const [id, ang] of at) {
+    const [cx, cy] = knobXY.get(id) ?? polar(178, R(ang));
+    const [x0, y0] = polar(30, Math.atan2(-cy, cx) * 180 / Math.PI);
+    el('line', { x1: x0, y1: y0, x2: cx * 0.94, y2: cy * 0.94, stroke: state.colors[id], class: 'thread' }, svg);
+    const knob = el('circle', {
+      cx, cy, r: knobR, fill: state.colors[id], class: 'strand' + (movingIds.has(id) ? ' moving' : ''), tabindex: 0, role: 'button', 'data-id': id,
+      'aria-label': setup ? `Strand ${labels.get(id)}` : 'Strand',
+    }, svg);
+    if (setup) el('title', {}, knob).textContent = labels.get(id);
+    if (sim?.idle.includes(id)) el('circle', { cx, cy, r: knobR + 5, class: 'idle-ring' }, svg);
+    knob.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (walk.busy) return;
+      try { $('disk').setPointerCapture(e.pointerId); } catch { /* not supported */ }
+      painting = true;
+      paint([id]);
+    });
+    knob.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); paint([id]); } });
+    if (setup && state.labels) {
+      const [lx, ly] = polar(199, ang);
+      el('text', { x: lx, y: ly + 4, 'text-anchor': 'middle', class: 'strand-label' }, svg).textContent = labels.get(id);
+    }
+  }
+
+  if (!frame) drawMoveArrows(svg, d, R);
 }
 
-// Arrows for the first step of the movement rule, so the rule can be checked
-// against what the hands do.
-function drawMoveArrows(svg, n) {
-  const G = groupCount(n);
-  const first = simulateRule({ strands: n, rule: state.rule, steps: 1 }).stitches;
-  if (!first.length) return;
-  const defs = el('defs', {}, svg);
-  const marker = el('marker', { id: 'arrowhead', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse' }, defs);
-  el('path', { d: 'M0,0 L10,5 L0,10 z', class: 'arrow-head' }, marker);
-  const layout = strandLayout(n);
-  first.forEach((st, i) => {
-    const from = layout.find((l) => l.id === st.strand).angle;
-    const to = dotAngle(st.dst, G) + (st.dir > 0 ? -1 : 1) * Math.min(7, 360 / G / 4);
-    const half = (resolveDist(state.rule.steps[0].moves[st.rule[1]].dist, G) * 180) / G;
-    const [x0, y0] = polar(150, from);
-    const [x1, y1] = polar(150, to);
-    const [cx, cy] = polar(Math.max(36, 150 * Math.cos(half * Math.PI / 180) * 0.85), st.angle);
+// Numbered arrows for the moves of the step about to be made.
+function drawMoveArrows(svg, d, R) {
+  d.moves.forEach((m, i) => {
+    const from = strandAngles(m.before, d.G).get(m.strand);
+    const to = strandAngles(m.after, d.G).get(m.strand);
+    const { mid, pull } = travel(from, to, m.dir);
+    const [x0, y0] = polar(150, R(from));
+    const [x1, y1] = polar(150, R(to));
+    const [cx, cy] = polar(150 * pull, R(mid));
     el('path', { d: `M${x0},${y0} Q${cx},${cy} ${x1},${y1}`, class: 'arrow', 'marker-end': 'url(#arrowhead)' }, svg);
-    const [lx, ly] = polar(Math.max(56, 150 * Math.cos(half * Math.PI / 180) * 0.85 + 8), st.angle);
+    const [lx, ly] = bezier([x0, y0], [cx, cy], [x1, y1], 0.5);
     const tag = el('g', { class: 'arrow-tag' }, svg);
     el('circle', { cx: lx, cy: ly, r: 9 }, tag);
     el('text', { x: lx, y: ly + 3.5, 'text-anchor': 'middle' }, tag).textContent = i + 1;
   });
+}
+
+// ------------------------------------------------------------- walk-through
+
+const walk = { step: 0, playing: false, busy: false, gen: 0 };
+const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+function renderWalk() {
+  const d = currentDetails();
+  const G = d.G;
+  $('walkLabel').textContent = walk.step === 0 ? 'Set-up · step 1 next' : `After ${walk.step} step${walk.step > 1 ? 's' : ''} · step ${walk.step + 1} next`;
+  $('walkStart').disabled = $('walkPrev').disabled = walk.step === 0 || walk.busy;
+  $('walkNext').disabled = walk.busy && !walk.playing;
+  $('walkPlay').textContent = walk.playing ? 'Pause' : 'Play';
+  const say = $('walkSay');
+  say.replaceChildren();
+  const ruleSteps = state.rule.steps.length;
+  const head = document.createElement('p');
+  head.className = 'walk-head';
+  head.textContent = `Step ${walk.step + 1}` + (ruleSteps > 1 ? ` (uses rule step ${d.ruleStep + 1} of ${ruleSteps})` : '') + ':';
+  say.append(head);
+  const ol = document.createElement('ol');
+  d.rule.moves.forEach((m) => {
+    const li = document.createElement('li');
+    li.textContent = describeMove(m, G);
+    ol.append(li);
+  });
+  const li = document.createElement('li');
+  li.className = 'turn';
+  li.textContent = describeTurn(d.turn);
+  ol.append(li);
+  say.append(ol);
+}
+
+function animate(ms, draw) {
+  if (reduceMotion) { draw(1); return Promise.resolve(); }
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - t0) / ms);
+      draw(t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2); // ease in-out
+      if (t < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+async function stepForward() {
+  if (walk.busy) return;
+  const gen = walk.gen;
+  walk.busy = true;
+  renderWalk();
+  const d = currentDetails();
+  const stale = () => gen !== walk.gen; // the rule or strands changed mid-animation
+  const G = d.G;
+  const rot0 = (d.top * 360) / G;
+  for (const m of d.moves) {
+    const from = strandAngles(m.before, G);
+    const to = strandAngles(m.after, G);
+    if (stale()) return;
+    await animate(650, (t) => !stale() && renderDisk({
+      groups: m.before, rot: rot0, from, to, t,
+      moving: { strand: m.strand, from: from.get(m.strand), to: to.get(m.strand), sign: m.dir, t },
+    }));
+  }
+  if (d.turn) {
+    const still = strandAngles(d.after, G);
+    if (stale()) return;
+    await animate(450, (t) => !stale() && renderDisk({ groups: d.after, rot: rot0 + (d.turn * 360 * t) / G, from: still, to: still, t: 0 }));
+  }
+  if (stale()) return;
+  walk.step++;
+  walk.busy = false;
+  renderDisk();
+  renderWalk();
+}
+
+function goTo(step) {
+  if (walk.busy) return;
+  walk.step = Math.max(0, step);
+  renderDisk();
+  renderWalk();
+}
+
+async function play() {
+  walk.playing = !walk.playing;
+  renderWalk();
+  const gen = walk.gen;
+  while (walk.playing && gen === walk.gen) {
+    await stepForward();
+    if (walk.playing) await new Promise((r) => setTimeout(r, reduceMotion ? 900 : 350));
+  }
+  renderWalk();
+}
+
+function resetWalk() {
+  walk.gen++;
+  walk.busy = false;
+  walk.playing = false;
+  walk.step = 0;
+  walkDetails = null;
 }
 
 // ---------------------------------------------------------------- rule editor
@@ -170,6 +342,7 @@ function presetIdFor(rule) {
 
 function changeRule(fn) {
   fn(state.rule);
+  resetWalk();
   update({ palette: false });
 }
 
@@ -187,6 +360,15 @@ function renderRule() {
   $('ruleHint').textContent = RULE_PRESETS.find((p) => p.id === current)?.hint ?? 'Edited by you';
 
   const warnings = sim ? ruleWarnings(sim.stats, state.rule) : [];
+
+  if (sim?.idle.length) {
+    const labels = strandLayout(n);
+    const names = sim.idle.map((id) => labels.find((l) => l.id === id).label);
+    const p = document.createElement('p');
+    p.className = 'warn idle';
+    p.textContent = `With this rule ${names.join(', ')} never move. On a real disk they would stay put and get buried inside the cord, so their colour won't show. They're circled on the disk. Try "lay it past the pair", or a different strand or direction.`;
+    box.append(p);
+  }
 
   state.rule.steps.forEach((step, si) => {
     const card = document.createElement('fieldset');
@@ -231,7 +413,13 @@ function renderRule() {
         if (!step.moves.length) r.steps.splice(si, 1);
       }));
 
-      row.append(from, dir, dist, del);
+      const land = document.createElement('select');
+      land.setAttribute('aria-label', 'Where it lands');
+      option(land, 'near', 'stop at the pair', m.land !== 'far');
+      option(land, 'far', 'lay it past the pair', m.land === 'far');
+      land.addEventListener('change', () => changeRule(() => { if (land.value === 'far') m.land = 'far'; else delete m.land; }));
+
+      row.append(from, dir, dist, land, del);
       const say = document.createElement('p');
       say.className = 'say';
       const st = sim?.stats[si]?.[mi];
@@ -258,7 +446,7 @@ function renderRule() {
     turnRow.className = 'turn-row';
     turnRow.textContent = 'Then ';
     const turn = document.createElement('select');
-    for (const t of [1, -1, 2, -2, 0]) option(turn, t, describeTurn(t).replace(/\.$/, '').replace(/^T/, 't').replace(/^Don't/, "don't"), (step.turn || 0) === t);
+    for (const t of [...new Set([1, -1, 2, -2, 0, step.turn || 0])]) option(turn, t, describeTurn(t).replace(/\.$/, '').replace(/^T/, 't').replace(/^Don't/, "don't"), (step.turn || 0) === t);
     turn.addEventListener('change', () => changeRule(() => { step.turn = Number(turn.value); }));
     turnRow.append(turn);
 
@@ -266,7 +454,7 @@ function renderRule() {
     timesRow.className = 'turn-row';
     timesRow.textContent = 'Do this step ';
     const times = document.createElement('select');
-    for (const t of [1, 2, 3, 4]) option(times, t, t === 1 ? 'once' : `${t} times`, step.times === t);
+    for (const t of [...new Set([1, 2, 3, 4, ...(typeof step.times === 'number' ? [step.times] : [])])].sort((a, b) => a - b)) option(times, t, t === 1 ? 'once' : `${t} times`, step.times === t);
     option(times, 'round', `once per dot (${G} times)`, step.times === 'round');
     times.addEventListener('change', () => changeRule(() => { step.times = times.value === 'round' ? 'round' : Number(times.value); }));
     timesRow.append(times);
@@ -291,7 +479,7 @@ function renderRule() {
   addStep.textContent = '+ Add a different step';
   addStep.disabled = state.rule.steps.length >= 12;
   addStep.addEventListener('click', () => changeRule((r) => {
-    r.steps.push({ moves: [{ from: 'TR', dir: 'ccw', dist: 1 }, { from: 'BL', dir: 'ccw', dist: 1 }], turn: 1, times: 1 });
+    r.steps.push(cloneRule(RULE_PRESETS.find((p) => p.id === 'next').rule).steps[0]);
   }));
   box.append(addStep);
 }
@@ -315,13 +503,20 @@ function renderPalette() {
     edit.type = 'color';
     edit.value = c;
     edit.title = 'Change this colour everywhere';
+    // Remember which strands use this swatch when picking starts, so passing
+    // over another swatch's colour while choosing doesn't merge the two.
+    let mine = null;
+    const grab = () => { if (!mine) mine = state.colors.map((x, id) => (x === state.palette[i] ? id : -1)).filter((id) => id >= 0); };
+    edit.addEventListener('pointerdown', grab);
+    edit.addEventListener('focus', grab);
     edit.addEventListener('input', () => {
-      const old = state.palette[i];
+      grab();
       state.palette[i] = edit.value;
-      state.colors = state.colors.map((x) => (x === old ? edit.value : x));
+      for (const id of mine) state.colors[id] = edit.value;
       b.style.background = edit.value;
-      update({ palette: false });
+      scheduleUpdate({ palette: false });
     });
+    edit.addEventListener('change', () => { mine = null; renderPalette(); });
     wrap.append(b, edit);
     if (i < 2) {
       const tag = document.createElement('span');
@@ -337,6 +532,7 @@ function renderPalette() {
       x.title = 'Remove (not used)';
       x.addEventListener('click', () => {
         state.palette.splice(i, 1);
+        if (i < state.brush) state.brush--;
         state.brush = Math.min(state.brush, state.palette.length - 1);
         renderPalette();
       });
@@ -352,8 +548,9 @@ function renderPalette() {
   input.type = 'color';
   input.value = '#888888';
   input.addEventListener('change', () => {
-    state.palette.push(input.value);
-    state.brush = state.palette.length - 1;
+    const existing = state.palette.indexOf(input.value);
+    if (existing < 0) state.palette.push(input.value);
+    state.brush = existing < 0 ? state.palette.length - 1 : existing;
     renderPalette();
   });
   add.append(input);
@@ -441,8 +638,10 @@ function scheduleUpdate(opts) {
 }
 
 function update({ palette = true } = {}) {
+  walkDetails = null;
   simulate();
   renderDisk();
+  renderWalk();
   renderRule();
   if (palette) renderPalette();
   renderOutputs();
@@ -463,9 +662,13 @@ function init() {
     sel.append(o);
   }
   sel.value = state.colors.length;
-  sel.addEventListener('change', () => { state.colors = resizeLayout(state.colors, Number(sel.value)); update(); });
+  sel.addEventListener('change', () => { state.colors = resizeLayout(state.colors, Number(sel.value)); resetWalk(); update(); });
 
   $('disk').addEventListener('pointermove', paintUnderPointer);
+  $('walkStart').addEventListener('click', () => goTo(0));
+  $('walkPrev').addEventListener('click', () => goTo(walk.step - 1));
+  $('walkNext').addEventListener('click', () => { if (!walk.playing) stepForward(); });
+  $('walkPlay').addEventListener('click', play);
 
   $('labels').checked = state.labels;
   $('labels').addEventListener('change', (e) => { state.labels = e.target.checked; renderDisk(); });
@@ -485,7 +688,7 @@ function init() {
   $('twistReset').addEventListener('click', () => { state.twist = DEFAULT_TWIST; $('twist').value = state.twist; update({ palette: false }); });
   $('rulePreset').addEventListener('change', (e) => {
     const p = RULE_PRESETS.find((r) => r.id === e.target.value);
-    if (p) { state.rule = cloneRule(p.rule); update({ palette: false }); }
+    if (p) { state.rule = cloneRule(p.rule); resetWalk(); update({ palette: false }); }
   });
 
   $('mirror').addEventListener('click', () => { state.colors = mirrorRightToLeft(state.colors); update(); });
@@ -518,8 +721,9 @@ function init() {
     state.colors = p.colors;
     if (p.rounds) state.rounds = p.rounds;
     if (p.twist !== undefined) state.twist = p.twist;
-    state.rule = p.rule;
+    state.rule = cloneRule(p.rule);
     for (const c of p.colors) if (!state.palette.includes(c)) state.palette.push(c);
+    resetWalk();
     syncControls();
     update();
   });
@@ -530,7 +734,9 @@ function init() {
   });
 
   let last = 0;
+  let ticking = false;
   const tick = (t) => {
+    ticking = state.spin;
     if (state.spin) {
       if (last) state.view = (state.view + (t - last) * 0.03) % 360;
       last = t;
@@ -543,7 +749,7 @@ function init() {
   $('spin').addEventListener('change', (e) => {
     state.spin = e.target.checked;
     if (cord3d) cord3d.setSpin(state.spin);
-    else if (state.spin) requestAnimationFrame(tick);
+    else if (state.spin && !ticking) { ticking = true; requestAnimationFrame(tick); }
   });
 
   window.addEventListener('resize', drawPreview);

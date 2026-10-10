@@ -110,6 +110,7 @@ export function createCordView(canvas, { onModeChange } = {}) {
     bumpMap: bindTex,
     bumpScale: 0.02,
   });
+  bindTex.repeat.set(1, 3);
   const capMaterial = new THREE.MeshStandardMaterial({ color: 0x8a7148, roughness: 0.8 });
 
   let cord = null;
@@ -197,7 +198,8 @@ export function createCordView(canvas, { onModeChange } = {}) {
     }
     for (const m of extras) { group.remove(m); m.geometry.dispose(); }
     extras.length = 0;
-    if (!surface) { requestRender(); return; }
+    cord = null;
+    if (!surface) { texSize = [0, 0]; requestRender(); return; }
 
     const { width: W, height: H } = surface;
     const map = new THREE.CanvasTexture(canvasFrom(W, H, (d) => d.set(surface.albedo)));
@@ -228,11 +230,16 @@ export function createCordView(canvas, { onModeChange } = {}) {
     cordMaterial.displacementMap = dispMap;
     cordMaterial.needsUpdate = true;
 
+    const oldLength = length;
     length = (H / W) * 2 * Math.PI * RADIUS;
+    const firstTime = !texSize[0];
     texSize = [W, H];
     buildMesh();
-    resize();
-    fit();
+    // Keep the viewer's camera when only colours change; reframe for a new length.
+    if (firstTime || Math.abs(length - oldLength) > 1e-6) {
+      resize();
+      fit();
+    }
     requestRender();
   }
 
@@ -317,12 +324,7 @@ export function createCordView(canvas, { onModeChange } = {}) {
       const base = path.at(end);
       const collarH = 0.9;
       const collarGeo = new THREE.CylinderGeometry(RADIUS * 1.09, RADIUS * 1.09, collarH, 96, 1, true);
-      const tex = bindTex.clone();
-      tex.needsUpdate = true;
-      tex.repeat.set(1, 3);
-      const mat = bindMaterial.clone();
-      mat.bumpMap = tex;
-      const collar = new THREE.Mesh(collarGeo, mat);
+      const collar = new THREE.Mesh(collarGeo, bindMaterial);
       collar.quaternion.setFromUnitVectors(up, out);
       collar.position.copy(base).addScaledVector(out, collarH / 2 - 0.15);
       const cap = new THREE.Mesh(new THREE.CircleGeometry(RADIUS * 1.09, 64), capMaterial);
@@ -373,7 +375,20 @@ export function createCordView(canvas, { onModeChange } = {}) {
     }
     requestRender();
   });
-  const up = (e) => { pointers.delete(e.pointerId); if (pointers.size < 2) pinchStart = 0; };
+  // Double tap (or double click) returns to the close-up; dblclick isn't sent
+  // for taps on iOS, so time the taps ourselves.
+  let lastTap = 0;
+  let downAt = null;
+  canvas.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  const up = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchStart = 0;
+    if (downAt && performance.now() - downAt.t < 300 && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 10) {
+      const now = performance.now();
+      if (now - lastTap < 350) { lastTap = 0; setMode('close'); onModeChange?.(mode); } else lastTap = now;
+    }
+    downAt = null;
+  };
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
   canvas.addEventListener('wheel', (e) => {
@@ -381,7 +396,6 @@ export function createCordView(canvas, { onModeChange } = {}) {
     view.distance = clampDist(view.distance * Math.exp(e.deltaY * 0.0012));
     requestRender();
   }, { passive: false });
-  canvas.addEventListener('dblclick', () => { setMode('close'); onModeChange?.(mode); });
 
   function clampDist(d) {
     return Math.max(RADIUS * 3.2, Math.min(fitDistance * 1.3, d));

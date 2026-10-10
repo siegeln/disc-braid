@@ -29,7 +29,15 @@
       </div>
 
       <svg id="disk" viewBox="-210 -210 420 420" role="img" aria-label="Kumihimo disk, click a strand to colour it"></svg>
-      <p class="hint">Tap a strand to paint it with the selected colour. Tap a dot's number to paint both strands of that pair.</p>
+      <div class="walk" role="group" aria-label="Walk through the moves">
+        <button id="walkStart" type="button" title="Back to the set-up" aria-label="Back to the set-up">⏮</button>
+        <button id="walkPrev" type="button" title="Previous step" aria-label="Previous step">◀</button>
+        <span id="walkLabel" class="walk-label" aria-live="polite"></span>
+        <button id="walkNext" type="button" title="Do the next step" aria-label="Do the next step">▶</button>
+        <button id="walkPlay" type="button">Play</button>
+      </div>
+      <div id="walkSay" class="walk-say"></div>
+      <p class="hint">Tap a strand to paint it with the selected colour. Tap a dot's number to paint both strands of that pair. Use ▶ to see each move happen, step by step.</p>
 
       <h2>Colours <span class="zh">配色</span></h2>
       <div id="palette" class="palette"></div>

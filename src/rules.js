@@ -54,7 +54,8 @@ export function describeMove(m, G) {
   const looks = (pos.at === 'top') === (m.dir === 'ccw') ? 'left' : 'right';
   const d = resolveDist(m.dist, G);
   const where = d === G / 2 ? `across to the ${pos.at === 'top' ? 'bottom' : 'top'}` : `to the ${looks}`;
-  return `Take the ${pos.name} strand ${way} (${where}) to ${distLabel(m.dist, G).replace(/^skip/, 'the dot after skipping')}.`;
+  const land = m.land === 'far' ? ', laying it past that pair' : '';
+  return `Take the ${pos.name} strand ${way} (${where}) to ${distLabel(m.dist, G).replace(/^skip/, 'the dot after skipping')}${land}.`;
 }
 
 export function describeTurn(turn) {
@@ -87,20 +88,20 @@ export const RULE_PRESETS = [
   {
     id: 'next',
     name: 'Next dot',
-    hint: 'Each strand moves to the neighbouring pair',
-    rule: { steps: [{ moves: [{ from: 'TR', dir: 'ccw', dist: 1 }, { from: 'BL', dir: 'ccw', dist: 1 }], turn: 1, times: 1 }] },
+    hint: 'Each strand moves past the neighbouring pair',
+    rule: { steps: [{ moves: [{ from: 'TR', dir: 'ccw', dist: 1, land: 'far' }, { from: 'BL', dir: 'ccw', dist: 1, land: 'far' }], turn: 1, times: 1 }] },
   },
   {
     id: 'skip1',
     name: 'Skip one dot',
-    hint: 'Move past the neighbouring pair',
-    rule: { steps: [{ moves: [{ from: 'TR', dir: 'ccw', dist: 2 }, { from: 'BL', dir: 'ccw', dist: 2 }], turn: 1, times: 1 }] },
+    hint: 'Each strand moves past the pair two dots along',
+    rule: { steps: [{ moves: [{ from: 'TR', dir: 'ccw', dist: 2, land: 'far' }, { from: 'BL', dir: 'ccw', dist: 2, land: 'far' }], turn: 1, times: 1 }] },
   },
   {
     id: 'mixed',
     name: 'Opposite round, then next-dot round',
     hint: 'Alternate the two kinds of move, one round each',
-    rule: { steps: [{ ...kongoStep, times: 'round' }, { moves: [{ from: 'TR', dir: 'ccw', dist: 1 }, { from: 'BL', dir: 'ccw', dist: 1 }], turn: 1, times: 'round' }] },
+    rule: { steps: [{ ...kongoStep, times: 'round' }, { ...{ moves: [{ from: 'TR', dir: 'ccw', dist: 1, land: 'far' }, { from: 'BL', dir: 'ccw', dist: 1, land: 'far' }], turn: 1, times: 1 }, times: 'round' }] },
   },
   {
     id: 'zigzag',
@@ -114,6 +115,10 @@ export const RULE_PRESETS = [
     },
   },
 ];
+
+// Presets are built from shared pieces; give each its own copy so editing one
+// rule can never change another.
+for (const p of RULE_PRESETS) p.rule = cloneRule(p.rule);
 
 export const DEFAULT_RULE = RULE_PRESETS[0].rule;
 
@@ -147,7 +152,7 @@ export function stepHeight(G, movesInStep) {
  * (how many strands each move in the rule crossed, and whether it ever found
  * its pair empty).
  */
-export function simulate({ strands, rule = DEFAULT_RULE, steps }) {
+export function simulate({ strands, rule = DEFAULT_RULE, steps, onMove }) {
   if (!isValidStrandCount(strands)) throw new Error(`strand count must be a multiple of 4 between ${MIN_STRANDS} and ${MAX_STRANDS}`);
   const G = groupCount(strands);
   const seq = expandRule(rule, G);
@@ -179,24 +184,61 @@ export function simulate({ strands, rule = DEFAULT_RULE, steps }) {
       // strand in the pairs between. It lands on the near side of its new pair.
       let cross = sign > 0 ? idx : list.length - 1 - idx;
       for (let k = 1; k < d; k++) cross += groups[mod(src - sign * k, G)].length;
+      const far = m.land === 'far';
+      if (far) cross += groups[dst].length - (dst === src ? 1 : 0);
       stat.minCross = Math.min(stat.minCross, cross);
       stat.maxCross = Math.max(stat.maxCross, cross);
 
+      const before = onMove ? groups.map((g) => g.slice()) : null;
       list.splice(idx, 1);
-      if (sign > 0) groups[dst].push(strand); else groups[dst].unshift(strand);
+      // Near side: it stops as soon as it reaches the pair. Far side: it is laid
+      // past the pair, crossing over it.
+      if ((sign > 0) !== far) groups[dst].push(strand); else groups[dst].unshift(strand);
 
       const angle = mod(dotAngle(src, G) + (sign * d * 360) / G / 2, 360);
       stitches.push({ strand, angle, step: s, y, h, dir: sign, crossings: cross, src, dst, rule: [step.index, mi] });
+      onMove?.({ step: s, move: mi, strand, src, dst, dir: sign, dist: d, far, crossings: cross, top, before, after: groups.map((g) => g.slice()) });
     });
     top += step.turn || 0;
     y += h;
     stepY.push(y);
   }
   for (const row of stats) for (const st of row) if (st.minCross === Infinity) st.minCross = 0;
-  return { G, stitches, groups, stats, stepY, cycle: seq.length };
+  return { G, stitches, groups, stats, stepY, cycle: seq.length, idle: idleStrands(stitches, strands, steps) };
+}
+
+/**
+ * Strands that stop moving once the braid has settled (checked over the later
+ * half). They stay where they are, end up buried in the cord, and their
+ * colour doesn't show on the surface.
+ */
+export function idleStrands(stitches, strands, steps) {
+  const moved = new Array(strands).fill(false);
+  for (const s of stitches) if (s.step >= steps / 2) moved[s.strand] = true;
+  return moved.map((m, id) => (m ? -1 : id)).filter((id) => id >= 0);
 }
 
 /** Kongo Gumi, kept as a named shortcut. turn: 'ccw' (standard) or 'cw'. */
+/**
+ * Everything needed to show one step by hand: the disk before it (pairs and
+ * which dot is at the top), each move with the pairs before and after it, and
+ * the turn that follows. Step numbers count from 0.
+ */
+export function stepDetails({ strands, rule, step }) {
+  const G = groupCount(strands);
+  const seq = expandRule(rule, G);
+  const moves = [];
+  const r = simulate({ strands, rule, steps: step + 1, onMove: (m) => { if (m.step === step) moves.push(m); } });
+  let top = 0;
+  for (let i = 0; i < step; i++) top += seq[i % seq.length].turn || 0;
+  const cur = seq[step % seq.length];
+  const before = simulate({ strands, rule, steps: step }).groups;
+  return {
+    G, top, turn: cur.turn || 0, ruleStep: cur.index, cycle: seq.length,
+    before, after: r.groups, moves, rule: cur,
+  };
+}
+
 export function simulateKongoGumi({ strands, steps, turn = 'ccw' }) {
   const rule = turn === 'cw'
     ? { steps: [{ ...kongoStep, turn: -1 }] }
@@ -223,13 +265,13 @@ export function ruleWarnings(stats, rule) {
 
 export function encodeRule(rule) {
   return rule.steps.map((s) => {
-    const moves = s.moves.map((m) => `${m.from}${m.dir === 'ccw' ? 'a' : 'c'}${m.dist === 'opp' ? 'o' : m.dist}`).join(',');
+    const moves = s.moves.map((m) => `${m.from}${m.dir === 'ccw' ? 'a' : 'c'}${m.dist === 'opp' ? 'o' : m.dist}${m.land === 'far' ? 'f' : ''}`).join(',');
     const times = s.times === 'round' ? 'r' : String(s.times ?? 1);
     return `${moves}/${s.turn || 0}${times === '1' ? '' : `x${times}`}`;
   }).join('_');
 }
 
-const MOVE = /^(TL|TR|BL|BR)([ac])(o|\d{1,2})$/;
+const MOVE = /^(TL|TR|BL|BR)([ac])(o|\d{1,2})(f?)$/;
 const STEP = /^([^/]*)\/(-?\d{1,2})(?:x(r|\d{1,2}))?$/;
 
 export function decodeRule(text) {
@@ -242,10 +284,13 @@ export function decodeRule(text) {
     for (const tok of sm[1].split(',').filter(Boolean)) {
       const mm = MOVE.exec(tok);
       if (!mm) return null;
-      moves.push({ from: mm[1], dir: mm[2] === 'a' ? 'ccw' : 'cw', dist: mm[3] === 'o' ? 'opp' : Number(mm[3]) });
+      const mv = { from: mm[1], dir: mm[2] === 'a' ? 'ccw' : 'cw', dist: mm[3] === 'o' ? 'opp' : Math.max(1, Number(mm[3])) };
+      if (mm[4]) mv.land = 'far';
+      moves.push(mv);
     }
     if (moves.length > 8) return null;
-    steps.push({ moves, turn: Number(sm[2]), times: sm[3] === 'r' ? 'round' : Number(sm[3] ?? 1) });
+    if (!moves.length) return null;
+    steps.push({ moves, turn: Math.max(-4, Math.min(4, Number(sm[2]))), times: sm[3] === 'r' ? 'round' : Math.max(1, Math.min(16, Number(sm[3] ?? 1))) });
   }
   return steps.length && steps.length <= 12 ? { steps } : null;
 }

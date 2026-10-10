@@ -4,8 +4,10 @@ import {
   PRESETS, DEFAULT_PALETTE, groupCount, mirrorRightToLeft, mirrorStrand, rotateLayout, strandLayout,
 } from '../src/braid.js';
 import { decodePattern, encodePattern } from '../src/pattern.js';
+import { buildSurface, trimSteps } from '../src/render.js';
+import { twistDegrees } from '../src/braid.js';
 import {
-  DEFAULT_RULE, RULE_PRESETS, decodeRule, describeMove, encodeRule, ruleWarnings, simulate, simulateKongoGumi,
+  DEFAULT_RULE, RULE_PRESETS, decodeRule, describeMove, encodeRule, ruleWarnings, simulate, simulateKongoGumi, stepDetails,
 } from '../src/rules.js';
 
 const COUNTS = [8, 12, 16, 20, 24, 28, 32];
@@ -158,4 +160,61 @@ test('moves are described in plain language', () => {
     'Take the bottom-right strand counter-clockwise (across to the top) to the opposite dot.');
   assert.equal(describeMove({ from: 'TR', dir: 'ccw', dist: 2 }, 8),
     'Take the top-right strand counter-clockwise (to the left) to the dot after skipping 1 dot.');
+});
+
+test('every preset moves every strand equally often (no colour can go missing)', () => {
+  for (const n of COUNTS) for (const p of RULE_PRESETS) {
+    const G = groupCount(n);
+    const r = simulate({ strands: n, rule: p.rule, steps: 40 * G });
+    assert.deepEqual(r.idle, [], `${p.id} n=${n}`);
+    const c = new Array(n).fill(0);
+    for (const s of r.stitches) if (s.step >= 20 * G) c[s.strand]++;
+    assert.equal(Math.min(...c), Math.max(...c), `${p.id} n=${n}`);
+  }
+});
+
+test('strands that never move are reported (the old next-dot rule lost half of them)', () => {
+  const old = decodeRule('TRa1,BLa1/1');
+  const r = simulate({ strands: 16, rule: old, steps: 160 });
+  assert.equal(r.idle.length, 10);
+  const labels = r.idle.map((id) => strandLayout(16).find((l) => l.id === id).label);
+  assert.ok(labels.includes('L2') && labels.includes('L3'));
+});
+
+test('laying a strand past the pair lands it on the far side and counts those crossings', () => {
+  const rule = { steps: [{ moves: [{ from: 'TR', dir: 'ccw', dist: 1, land: 'far' }], turn: 0, times: 1 }] };
+  const r = simulate({ strands: 8, rule, steps: 1 });
+  assert.deepEqual(r.groups[3], [1, 6, 7]); // W pair: strand 1 past both of its strands
+  assert.equal(r.stitches[0].crossings, 3); // its partner plus the two it was laid over
+  assert.equal(encodeRule(rule), 'TRa1f/0');
+  assert.deepEqual(decodeRule('TRa1f/0'), rule);
+});
+
+test('the picture shows every strand that moves, in proportion, with no gaps', () => {
+  for (const n of [8, 16, 24]) for (const p of RULE_PRESETS) {
+    const G = groupCount(n);
+    const sim = simulate({ strands: n, rule: p.rule, steps: 16 * G + 2 * trimSteps(G) });
+    const colors = Array.from({ length: n }, () => '#808080');
+    const surf = buildSurface({ stitches: sim.stitches, stepY: sim.stepY, colors, G, twist: twistDegrees(-0.5, n), resolution: 256 });
+    const area = new Array(n).fill(0);
+    for (const v of surf.strandAt) { assert.ok(v >= 0, 'gap in surface'); area[v]++; }
+    const fair = surf.strandAt.length / n;
+    for (let id = 0; id < n; id++) assert.ok(area[id] > 0.5 * fair && area[id] < 1.6 * fair, `${p.id} n=${n} strand ${id}`);
+  }
+});
+
+test('step-by-step details agree with the full simulation at every step', () => {
+  for (const p of RULE_PRESETS) for (const n of [8, 12]) {
+    const G = groupCount(n);
+    const full = simulate({ strands: n, rule: p.rule, steps: 3 * G + 1 });
+    let top = 0;
+    for (let k = 0; k <= 3 * G; k++) {
+      const d = stepDetails({ strands: n, rule: p.rule, step: k });
+      assert.equal(d.top, top, `${p.id} n=${n} step ${k}: disk turned the wrong amount`);
+      const laid = full.stitches.filter((s) => s.step === k);
+      assert.deepEqual(d.moves.map((m) => m.strand), laid.map((s) => s.strand), `${p.id} n=${n} step ${k}`);
+      assert.deepEqual(d.moves.at(-1)?.after ?? d.before, d.after);
+      top += d.turn;
+    }
+  }
 });

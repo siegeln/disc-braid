@@ -32,12 +32,18 @@ Any static host works too (for example GitHub Pages).
 4. **Movement rule (编织动作):** pick a rule or build your own. Each move is
    *take this strand* (top-left, top-right, bottom-left or bottom-right),
    *go this way* (clockwise or counter-clockwise), *this far* (next dot, skip one
-   dot, … opposite dot). After the moves, turn the disk. A rule can have several
+   dot, … opposite dot), and whether to *stop at the pair* it reaches or *lay it
+   past the pair*, crossing over it. After the moves, turn the disk. A rule can have several
    different steps that repeat in order, each done once, a few times, or once
-   per dot. Arrows on the disk show the first step. The editor says how many
-   strands each move passes over, and warns when a move never crosses anything
-   (it won't lock into the braid) or finds its pair empty.
-5. **Preview:** drag the cord to turn it any way, scroll or pinch to zoom.
+   per dot. The editor says how many strands each move passes over, and warns
+   when a move never crosses anything (it won't lock into the braid), finds its
+   pair empty, or when some strands never move at all (they'd be buried inside
+   the cord, so their colour wouldn't show; they're circled on the disk).
+5. **Walk through it:** under the disk, ▶ does the next step: the strands move
+   along numbered arrows and the disk turns, with the instructions written out.
+   Play keeps going; ◀ and ⏮ go back. Follow along on a real disk to check the
+   rule matches what your hands do.
+6. **Preview:** drag the cord to turn it any way, scroll or pinch to zoom.
    *Close-up* starts at the newest end, *Whole rope* stands the full length
    upright, and *Coiled* lays it in a flat spiral so a long rope (up to 150
    rounds) fits on screen. *Look along the cord* slides the close-up along it. *Copy pattern* copies a link (or, when the
@@ -62,7 +68,8 @@ Other presets: the mirrored version (spirals the other way), *next dot*, *skip
 one dot*, and rules that switch between two kinds of move each round. Any rule
 can be edited.
 
-A moved strand lands on the side of its new pair it arrives from. Each move
+A moved strand lands on the side of its new pair it arrives from, unless the
+move says to lay it past the pair. Each move
 lays one visible stitch on the cord, on the side the strand travelled past. The
 simulator follows every strand through every move, so it knows which colour
 each stitch is, and where and when it was laid. That colour sequence is exact.
