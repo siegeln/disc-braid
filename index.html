@@ -14,7 +14,8 @@
       <p class="sub">Kumihimo · Kongo Gumi round braid. Colour the strands on the disk and preview the cord.</p>
     </div>
     <div class="actions">
-      <button id="share" type="button">Copy link</button>
+      <button id="share" type="button" title="Copy a link to this pattern, or a code to paste into Load pattern">Copy pattern</button>
+      <button id="load" type="button">Load pattern</button>
       <button id="save" type="button">Save image</button>
     </div>
   </header>
@@ -89,6 +90,20 @@
       <p class="hint">One <i>round</i> means every pair has been to the top once. Strands at a dot only ever trade places with the dot opposite, so opposite dots decide each part of the pattern.</p>
     </section>
   </main>
+
+  <dialog id="loadDialog">
+    <form method="dialog" id="loadForm">
+      <label for="loadCode">Paste a pattern code or link</label>
+      <textarea id="loadCode" rows="3" placeholder="c=f3ead8.f3ead8.2b2b33…"></textarea>
+      <p id="loadError" class="error" hidden>That doesn't look like a pattern code. It should start with c= and list 8 to 32 colours.</p>
+      <div class="row"><button value="cancel" formnovalidate>Cancel</button><button id="loadGo" value="default">Load</button></div>
+    </form>
+  </dialog>
+  <dialog id="imageDialog">
+    <p class="hint">Right-click or long-press the image to save it.</p>
+    <img id="imageOut" alt="Rendered braid">
+    <form method="dialog"><button>Close</button></form>
+  </dialog>
 
   <script type="module" src="src/app.js"></script>
 </body>

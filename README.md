@@ -26,8 +26,9 @@ Any static host works too (for example GitHub Pages).
 3. **Layouts (布线):** start from a preset (spiral, single spiral line, split
    pairs, mirror stripes …). Colours **A** and **B** are the first two swatches.
    `Mirror R → L` copies R1…Rn onto L1…Ln for symmetric designs (镜像排布).
-4. **Preview:** turn or spin the cord. *Copy link* puts the whole pattern in the
-   URL so you can send it to someone. *Save image* downloads the cord as a PNG.
+4. **Preview:** turn or spin the cord. *Copy pattern* copies a link (or, when the
+   page is embedded, a short code) that *Load pattern* reads back, so you can
+   send a design to someone. *Save image* shows the cord as a PNG to save.
 
 Strands are labelled the way hand-written notes usually do it. The disk is split
 into a left and a right half. R1 is the first strand clockwise from 12 o'clock

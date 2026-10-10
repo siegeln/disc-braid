@@ -296,19 +296,34 @@ function init() {
 
   $('share').addEventListener('click', async () => {
     saveToHash();
+    const code = encodePattern(state);
+    // Inside a sandboxed frame the URL can't carry state, so copy the bare code there.
+    const text = window.top === window ? location.href : code;
     try {
-      await navigator.clipboard.writeText(location.href);
-      flash($('share'), 'Copied!');
+      await navigator.clipboard.writeText(text);
+      flash($('share'), 'Copied');
     } catch {
-      prompt('Copy this link:', location.href);
+      openLoad(text, true);
     }
   });
 
+  $('load').addEventListener('click', () => openLoad(''));
+  $('loadGo').addEventListener('click', (e) => {
+    const raw = $('loadCode').value.trim();
+    const p = decodePattern(raw.includes('#') ? raw.slice(raw.indexOf('#') + 1) : raw);
+    if (!p) { e.preventDefault(); $('loadError').hidden = false; return; }
+    state.colors = p.colors;
+    if (p.rounds) state.rounds = p.rounds;
+    if (p.twist !== undefined) state.twist = p.twist;
+    state.turn = p.turn;
+    for (const c of p.colors) if (!state.palette.includes(c)) state.palette.push(c);
+    syncControls();
+    update();
+  });
+
   $('save').addEventListener('click', () => {
-    const link = document.createElement('a');
-    link.download = `braid-${state.colors.length}.png`;
-    link.href = $('cord').toDataURL('image/png');
-    link.click();
+    $('imageOut').src = $('cord').toDataURL('image/png');
+    $('imageDialog').showModal();
   });
 
   let last = 0;
@@ -329,6 +344,21 @@ function init() {
 
   renderPresets();
   update();
+}
+
+function openLoad(text, copyMode = false) {
+  $('loadCode').value = text;
+  $('loadError').hidden = true;
+  $('loadGo').hidden = copyMode;
+  $('loadDialog').showModal();
+  if (copyMode) $('loadCode').select();
+}
+
+function syncControls() {
+  $('strands').value = state.colors.length;
+  $('rounds').value = state.rounds;
+  $('twist').value = state.twist;
+  $('turn').value = state.turn;
 }
 
 function flash(button, text) {
