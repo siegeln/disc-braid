@@ -218,3 +218,12 @@ test('step-by-step details agree with the full simulation at every step', () => 
     }
   }
 });
+
+test('a strand can go between the two strands of its new pair', () => {
+  const rule = { steps: [{ moves: [{ from: 'TR', dir: 'ccw', dist: 1, land: 'mid' }], turn: 0, times: 1 }] };
+  const r = simulate({ strands: 8, rule, steps: 1 });
+  assert.deepEqual(r.groups[3], [6, 1, 7]); // W pair: strand 1 between its two strands
+  assert.equal(r.stitches[0].crossings, 2); // its partner plus one strand of the new pair
+  assert.equal(encodeRule(rule), 'TRa1m/0');
+  assert.deepEqual(decodeRule('TRa1m/0'), rule);
+});

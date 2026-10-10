@@ -29,6 +29,13 @@ export const POSITIONS = {
   BR: { name: 'bottom-right', at: 'bottom', end: 'first' },
 };
 
+/** Index in the destination pair's (clockwise) list where a strand lands. */
+export function landingIndex(land, sign, len) {
+  if (land === 'mid') return Math.floor(len / 2);
+  const far = land === 'far';
+  return (sign > 0) !== far ? len : 0;
+}
+
 export function resolveDist(dist, G) {
   if (dist === 'opp') return G / 2;
   return Math.max(1, Math.min(G / 2, Math.round(Number(dist)) || 1));
@@ -54,7 +61,7 @@ export function describeMove(m, G) {
   const looks = (pos.at === 'top') === (m.dir === 'ccw') ? 'left' : 'right';
   const d = resolveDist(m.dist, G);
   const where = d === G / 2 ? `across to the ${pos.at === 'top' ? 'bottom' : 'top'}` : `to the ${looks}`;
-  const land = m.land === 'far' ? ', laying it past that pair' : '';
+  const land = m.land === 'far' ? ', laying it past that pair' : m.land === 'mid' ? ', putting it between the two strands there' : '';
   return `Take the ${pos.name} strand ${way} (${where}) to ${distLabel(m.dist, G).replace(/^skip/, 'the dot after skipping')}${land}.`;
 }
 
@@ -184,20 +191,22 @@ export function simulate({ strands, rule = DEFAULT_RULE, steps, onMove }) {
       // strand in the pairs between. It lands on the near side of its new pair.
       let cross = sign > 0 ? idx : list.length - 1 - idx;
       for (let k = 1; k < d; k++) cross += groups[mod(src - sign * k, G)].length;
-      const far = m.land === 'far';
-      if (far) cross += groups[dst].length - (dst === src ? 1 : 0);
-      stat.minCross = Math.min(stat.minCross, cross);
-      stat.maxCross = Math.max(stat.maxCross, cross);
-
       const before = onMove ? groups.map((g) => g.slice()) : null;
       list.splice(idx, 1);
-      // Near side: it stops as soon as it reaches the pair. Far side: it is laid
-      // past the pair, crossing over it.
-      if ((sign > 0) !== far) groups[dst].push(strand); else groups[dst].unshift(strand);
+      // Where it goes in its new pair (lists run clockwise, first = most
+      // counter-clockwise). Near: it stops as soon as it reaches the pair. Far:
+      // it is laid past the pair. Middle: it goes between the pair's strands.
+      const target = groups[dst];
+      const len = target.length;
+      const ins = landingIndex(m.land, sign, len);
+      cross += sign > 0 ? len - ins : ins; // strands of the new pair it passes over
+      stat.minCross = Math.min(stat.minCross, cross);
+      stat.maxCross = Math.max(stat.maxCross, cross);
+      target.splice(ins, 0, strand);
 
       const angle = mod(dotAngle(src, G) + (sign * d * 360) / G / 2, 360);
       stitches.push({ strand, angle, step: s, y, h, dir: sign, crossings: cross, src, dst, rule: [step.index, mi] });
-      onMove?.({ step: s, move: mi, strand, src, dst, dir: sign, dist: d, far, crossings: cross, top, before, after: groups.map((g) => g.slice()) });
+      onMove?.({ step: s, move: mi, strand, src, dst, dir: sign, dist: d, land: m.land || 'near', ins, crossings: cross, top, before, after: groups.map((g) => g.slice()) });
     });
     top += step.turn || 0;
     y += h;
@@ -265,13 +274,13 @@ export function ruleWarnings(stats, rule) {
 
 export function encodeRule(rule) {
   return rule.steps.map((s) => {
-    const moves = s.moves.map((m) => `${m.from}${m.dir === 'ccw' ? 'a' : 'c'}${m.dist === 'opp' ? 'o' : m.dist}${m.land === 'far' ? 'f' : ''}`).join(',');
+    const moves = s.moves.map((m) => `${m.from}${m.dir === 'ccw' ? 'a' : 'c'}${m.dist === 'opp' ? 'o' : m.dist}${m.land === 'far' ? 'f' : m.land === 'mid' ? 'm' : ''}`).join(',');
     const times = s.times === 'round' ? 'r' : String(s.times ?? 1);
     return `${moves}/${s.turn || 0}${times === '1' ? '' : `x${times}`}`;
   }).join('_');
 }
 
-const MOVE = /^(TL|TR|BL|BR)([ac])(o|\d{1,2})(f?)$/;
+const MOVE = /^(TL|TR|BL|BR)([ac])(o|\d{1,2})([fm]?)$/;
 const STEP = /^([^/]*)\/(-?\d{1,2})(?:x(r|\d{1,2}))?$/;
 
 export function decodeRule(text) {
@@ -285,7 +294,7 @@ export function decodeRule(text) {
       const mm = MOVE.exec(tok);
       if (!mm) return null;
       const mv = { from: mm[1], dir: mm[2] === 'a' ? 'ccw' : 'cw', dist: mm[3] === 'o' ? 'opp' : Math.max(1, Number(mm[3])) };
-      if (mm[4]) mv.land = 'far';
+      if (mm[4]) mv.land = mm[4] === 'f' ? 'far' : 'mid';
       moves.push(mv);
     }
     if (moves.length > 8) return null;

@@ -8,7 +8,7 @@ import { buildSurface, drawCord, drawUnrolled, trimSteps } from './render.js';
 import { createCordView } from './cord3d.js';
 import {
   DEFAULT_RULE, POSITIONS, RULE_PRESETS, cloneRule, describeMove, describeTurn, distLabel,
-  encodeRule, resolveDist, ruleWarnings, simulate as simulateRule, stepDetails,
+  encodeRule, resolveDist, resolveTimes, ruleWarnings, simulate as simulateRule, stepDetails,
 } from './rules.js';
 
 const $ = (id) => document.getElementById(id);
@@ -149,7 +149,7 @@ function renderDisk(frame) {
     el('line', { x1, y1, x2, y2, class: 'slot' }, svg);
   }
 
-  const groups = frame ? frame.groups : d.before;
+  const groups = frame ? frame.groups : pick ? pickSources(d).groups : d.before;
   for (let g = 0; g < G; g++) {
     const [x, y] = polar(132, R(dotAngle(g, G)));
     const dot = el('g', { class: 'dot', tabindex: 0, role: 'button', 'aria-label': `Pair at dot ${g + 1}: paint both strands` }, svg);
@@ -177,7 +177,7 @@ function renderDisk(frame) {
     }
   }
   const labels = new Map(strandLayout(n).map((l) => [l.id, l.label]));
-  const movingIds = new Set(frame ? [] : d.moves.map((m) => m.strand));
+  const movingIds = new Set(frame || pick ? [] : d.moves.map((m) => m.strand));
 
   for (const [id, ang] of at) {
     const [cx, cy] = knobXY.get(id) ?? polar(178, R(ang));
@@ -191,7 +191,7 @@ function renderDisk(frame) {
     if (sim?.idle.includes(id)) el('circle', { cx, cy, r: knobR + 5, class: 'idle-ring' }, svg);
     knob.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      if (walk.busy) return;
+      if (walk.busy || pick) return;
       try { $('disk').setPointerCapture(e.pointerId); } catch { /* not supported */ }
       painting = true;
       paint([id]);
@@ -203,7 +203,8 @@ function renderDisk(frame) {
     }
   }
 
-  if (!frame) drawMoveArrows(svg, d, R);
+  if (!frame && pick) drawPick(svg, d, R, knobR);
+  else if (!frame) drawMoveArrows(svg, d, R);
 }
 
 // Numbered arrows for the moves of the step about to be made.
@@ -220,6 +221,109 @@ function drawMoveArrows(svg, d, R) {
     const tag = el('g', { class: 'arrow-tag' }, svg);
     el('circle', { cx: lx, cy: ly, r: 9 }, tag);
     el('text', { x: lx, y: ly + 3.5, 'text-anchor': 'middle' }, tag).textContent = i + 1;
+  });
+}
+
+// ---------------------------------------------------------- set a move by tapping
+//
+// Tap one of the four strands that can be moved (top or bottom pair), then tap
+// the gap it should go into. The rule move is worked out from that.
+
+let pick = null; // { si, mi, from }
+
+function startPick(si, mi) {
+  const G = groupCount(state.colors.length);
+  resetWalk();
+  let k = 0;
+  for (let i = 0; i < si; i++) k += resolveTimes(state.rule.steps[i].times, G);
+  walk.step = k;
+  walkDetails = null;
+  pick = { si, mi, from: null };
+  renderDisk();
+  renderWalk();
+  $('disk').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+}
+
+function cancelPick() {
+  pick = null;
+  renderDisk();
+  renderWalk();
+}
+
+// The pairs as they are just before the move being set.
+function pickGroups(d) {
+  const done = d.moves.filter((m) => m.move < pick.mi);
+  return done.length ? done[done.length - 1].after : d.before;
+}
+
+function pickSources(d) {
+  const G = d.G;
+  const groups = pickGroups(d);
+  const top = ((d.top % G) + G) % G;
+  const bottom = (top + G / 2) % G;
+  const out = {};
+  if (groups[top].length) { out.TL = groups[top][0]; out.TR = groups[top][groups[top].length - 1]; }
+  if (groups[bottom].length) { out.BR = groups[bottom][0]; out.BL = groups[bottom][groups[bottom].length - 1]; }
+  return { out, top, bottom, groups };
+}
+
+function finishPick(g, k) {
+  const d = currentDetails();
+  const G = d.G;
+  const { top, bottom, groups } = pickSources(d);
+  const src = pick.from[0] === 'T' ? top : bottom;
+  const m = groups[g].length;
+  const ccwDist = (((src - g) % G) + G) % G;
+  let dir;
+  if (ccwDist < G / 2) dir = 'ccw';
+  else if (ccwDist > G / 2) dir = 'cw';
+  else dir = k === 0 ? 'cw' : 'ccw'; // straight across: arrive from the side that reaches that gap first
+  const dist = dir === 'ccw' ? ccwDist : G - ccwDist;
+  let land;
+  if (k > 0 && k < m) land = 'mid';
+  else if (dir === 'ccw') land = k === m ? 'near' : 'far';
+  else land = k === 0 ? 'near' : 'far';
+  const move = state.rule.steps[pick.si].moves[pick.mi];
+  move.from = pick.from;
+  move.dir = dir;
+  move.dist = dist === G / 2 ? 'opp' : dist;
+  if (land === 'near') delete move.land; else move.land = land;
+  pick = null;
+  resetWalk();
+  update({ palette: false });
+}
+
+function drawPick(svg, d, R, knobR) {
+  const G = d.G;
+  const { out, top, bottom, groups } = pickSources(d);
+  const at = strandAngles(groups, G);
+  if (!pick.from) {
+    for (const [pos, id] of Object.entries(out)) {
+      const [cx, cy] = polar(178, R(at.get(id)));
+      const ring = el('circle', { cx, cy, r: knobR + 6, class: 'pick-source', tabindex: 0, role: 'button', 'aria-label': `Move the ${POSITIONS[pos].name} strand` }, svg);
+      const choose = () => { pick.from = pos; renderDisk(); renderWalk(); };
+      ring.addEventListener('click', choose);
+      ring.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } });
+    }
+    return;
+  }
+  const src = pick.from[0] === 'T' ? top : bottom;
+  const spread = Math.min(7, 360 / G / 4);
+  const [sx, sy] = polar(178, R(at.get(out[pick.from])));
+  el('circle', { cx: sx, cy: sy, r: knobR + 6, class: 'pick-chosen' }, svg);
+  groups.forEach((list, g) => {
+    if (g === src) return;
+    const m = list.length;
+    for (let k = 0; k <= m; k++) {
+      const [cx, cy] = polar(150, R(dotAngle(g, G) + spread * (m - 2 * k)));
+      const slot = el('g', { class: 'pick-slot', tabindex: 0, role: 'button', 'aria-label': `Put it at dot ${g + 1}, gap ${k + 1}` }, svg);
+      el('circle', { cx, cy, r: 15, class: 'hit' }, slot); // bigger target for fingers
+      el('circle', { cx, cy, r: 9 }, slot);
+      el('text', { x: cx, y: cy + 4.5, 'text-anchor': 'middle' }, slot).textContent = '+';
+      const choose = () => finishPick(g, k);
+      slot.addEventListener('click', choose);
+      slot.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } });
+    }
   });
 }
 
@@ -242,10 +346,36 @@ function renderWalk() {
   head.className = 'walk-head';
   head.textContent = `Step ${walk.step + 1}` + (ruleSteps > 1 ? ` (uses rule step ${d.ruleStep + 1} of ${ruleSteps})` : '') + ':';
   say.append(head);
+  if (pick) {
+    const p = document.createElement('p');
+    p.className = 'pick-say';
+    p.textContent = pick.from
+      ? `Now tap the + where the ${POSITIONS[pick.from].name} strand should go.`
+      : `Setting move ${pick.mi + 1}${ruleSteps > 1 ? ` of rule step ${pick.si + 1}` : ''}: tap the strand to move (circled).`;
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', cancelPick);
+    say.replaceChildren(p, cancel);
+    return;
+  }
+  const names = new Map(strandLayout(state.colors.length).map((l) => [l.id, l.label]));
   const ol = document.createElement('ol');
-  d.rule.moves.forEach((m) => {
+  d.rule.moves.forEach((m, mi) => {
     const li = document.createElement('li');
     li.textContent = describeMove(m, G);
+    const done = d.moves.find((x) => x.move === mi);
+    if (done) {
+      const list = done.after[done.dst];
+      const i = list.indexOf(done.strand);
+      const nb = [list[i - 1], list[i + 1]].filter((x) => x !== undefined).map((x) => names.get(x))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const where = nb.length === 2 ? `between ${nb[0]} and ${nb[1]}` : nb.length ? `next to ${nb[0]}` : 'on its own';
+      const end = document.createElement('span');
+      end.className = 'ends';
+      end.textContent = ` → ${names.get(done.strand)} ends up at dot ${done.dst + 1}, ${where}.`;
+      li.append(end);
+    }
     ol.append(li);
   });
   const li = document.createElement('li');
@@ -317,6 +447,7 @@ async function play() {
 }
 
 function resetWalk() {
+  pick = null;
   walk.gen++;
   walk.busy = false;
   walk.playing = false;
@@ -391,7 +522,7 @@ function renderRule() {
 
       const dir = document.createElement('select');
       dir.setAttribute('aria-label', 'Direction');
-      option(dir, 'ccw', '↺ counter-clockwise', m.dir === 'ccw');
+      option(dir, 'ccw', '↺ anticlockwise', m.dir === 'ccw');
       option(dir, 'cw', '↻ clockwise', m.dir === 'cw');
       dir.addEventListener('change', () => changeRule(() => { m.dir = dir.value; }));
 
@@ -415,11 +546,19 @@ function renderRule() {
 
       const land = document.createElement('select');
       land.setAttribute('aria-label', 'Where it lands');
-      option(land, 'near', 'stop at the pair', m.land !== 'far');
-      option(land, 'far', 'lay it past the pair', m.land === 'far');
-      land.addEventListener('change', () => changeRule(() => { if (land.value === 'far') m.land = 'far'; else delete m.land; }));
+      option(land, 'near', 'before the pair', !m.land || m.land === 'near');
+      option(land, 'mid', 'into the middle', m.land === 'mid');
+      option(land, 'far', 'past the pair', m.land === 'far');
+      land.addEventListener('change', () => changeRule(() => { if (land.value === 'near') delete m.land; else m.land = land.value; }));
 
-      row.append(from, dir, dist, land, del);
+      const pickBtn = document.createElement('button');
+      pickBtn.type = 'button';
+      pickBtn.className = 'pick-btn';
+      pickBtn.textContent = 'Set on disk';
+      pickBtn.title = 'Tap the strand to move, then where it should go';
+      pickBtn.addEventListener('click', () => startPick(si, mi));
+
+      row.append(from, dir, dist, land, pickBtn, del);
       const say = document.createElement('p');
       say.className = 'say';
       const st = sim?.stats[si]?.[mi];

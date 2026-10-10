@@ -32,15 +32,18 @@ Any static host works too (for example GitHub Pages).
 4. **Movement rule (编织动作):** pick a rule or build your own. Each move is
    *take this strand* (top-left, top-right, bottom-left or bottom-right),
    *go this way* (clockwise or counter-clockwise), *this far* (next dot, skip one
-   dot, … opposite dot), and whether to *stop at the pair* it reaches or *lay it
-   past the pair*, crossing over it. After the moves, turn the disk. A rule can have several
+   dot, … opposite dot), and where it goes in the pair it reaches: *before the
+   pair*, *into the middle* (between its two strands) or *past the pair*.
+   Or press *Set on disk*, tap the strand to move, then tap the + where it
+   should go (for example R1 → between L2 and L3). After the moves, turn the disk. A rule can have several
    different steps that repeat in order, each done once, a few times, or once
    per dot. The editor says how many strands each move passes over, and warns
    when a move never crosses anything (it won't lock into the braid), finds its
    pair empty, or when some strands never move at all (they'd be buried inside
    the cord, so their colour wouldn't show; they're circled on the disk).
 5. **Walk through it:** under the disk, ▶ does the next step: the strands move
-   along numbered arrows and the disk turns, with the instructions written out.
+   along numbered arrows and the disk turns, with the instructions written out
+   and where each strand ends up (e.g. "R1 ends up at dot 8, between L2 and L3").
    Play keeps going; ◀ and ⏮ go back. Follow along on a real disk to check the
    rule matches what your hands do.
 6. **Preview:** drag the cord to turn it any way, scroll or pinch to zoom.

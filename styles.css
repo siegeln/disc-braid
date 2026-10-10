@@ -199,3 +199,13 @@ button:disabled { opacity: 0.4; cursor: default; }
 @media (pointer: coarse) {
   select, textarea, input, .move-row select, .turn-row select { font-size: 16px; }
 }
+.pick-source { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 5 4; cursor: pointer; pointer-events: all; }
+.pick-chosen { fill: none; stroke: var(--accent); stroke-width: 3.5; pointer-events: none; }
+.pick-slot { cursor: pointer; }
+.pick-slot circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.pick-slot circle.hit { fill: transparent; stroke: none; }
+.pick-slot text { fill: var(--panel); font-size: 14px; font-weight: 700; pointer-events: none; }
+.pick-slot:hover circle:not(.hit), .pick-slot:focus-visible circle:not(.hit) { r: 11; }
+.pick-say { margin: 0 0 8px; font-weight: 600; }
+.walk-say .ends { color: var(--accent); }
+button.pick-btn { padding: 4px 8px; font-size: 0.8rem; }
