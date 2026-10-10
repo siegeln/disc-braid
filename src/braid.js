@@ -8,15 +8,10 @@
 // top the first entry is the top-left strand, and for the pair at the bottom
 // the first entry is the bottom-right strand.
 //
-// One "step" of Kongo Gumi (the standard round braid on a disk) is:
-//   1. take the bottom-right strand up to the right of the top pair
-//   2. take the top-left strand down to the left of the bottom pair
-//   3. turn the disk so the next pair is at the top
-//
-// Every move lays one visible stitch on the surface of the cord, on the side
-// the strand crossed over (right of centre for the up-move, left for the
-// down-move). The cord hangs from the centre of the disk and turns with it, so
-// we record each stitch in the disk's own frame:
+// What the braider does with the strands is a movement rule (see rules.js).
+// Every move lays one visible stitch on the surface of the cord. The cord hangs
+// from the centre of the disk and turns with it, so stitches are recorded in
+// the disk's own frame:
 //   angle  - where around the cord it sits (degrees, 0 = 3 o'clock, CCW +)
 //   step   - when it was laid (higher = newer = closer to the disk)
 // The colour sequence is exact; how much the finished cord twists is a physical
@@ -76,36 +71,6 @@ export function mirrorStrand(id, n) {
   const g = Math.floor(id / 2);
   const k = id % 2;
   return strandId(mod(-g, G), 1 - k);
-}
-
-/**
- * Run Kongo Gumi for `steps` steps.
- * @param {object} opts
- * @param {number} opts.strands  number of strands (multiple of 4, 8..32)
- * @param {number} opts.steps    number of steps (each step = 2 moves + a turn)
- * @param {'ccw'|'cw'} [opts.turn] which way the disk is turned after each step
- * @returns {{G:number, stitches:Array<{strand:number, angle:number, step:number, move:'up'|'down'}>}}
- */
-export function simulateKongoGumi({ strands, steps, turn = 'ccw' }) {
-  if (!isValidStrandCount(strands)) throw new Error(`strand count must be a multiple of 4 between ${MIN_STRANDS} and ${MAX_STRANDS}`);
-  const G = groupCount(strands);
-  const dir = turn === 'cw' ? -1 : 1;
-  const groups = [];
-  for (let g = 0; g < G; g++) groups.push([strandId(g, 0), strandId(g, 1)]);
-
-  const stitches = [];
-  for (let s = 0; s < steps; s++) {
-    const t = mod(dir * s, G);
-    const b = mod(t + G / 2, G);
-    const top = dotAngle(t, G);
-    const up = groups[b].shift();
-    groups[t].push(up);
-    const down = groups[t].shift();
-    groups[b].push(down);
-    stitches.push({ strand: up, angle: mod(top - 90, 360), step: s, move: 'up' });
-    stitches.push({ strand: down, angle: mod(top + 90, 360), step: s, move: 'down' });
-  }
-  return { G, stitches, groups };
 }
 
 /** Steps for one full turn of the disk (every pair has been to the top once). */
@@ -176,33 +141,4 @@ export function rotateLayout(colors, by = 1) {
 /** Change strand count, keeping existing colours where possible. */
 export function resizeLayout(colors, n) {
   return Array.from({ length: n }, (_, i) => colors[i % colors.length]);
-}
-
-// ---------------------------------------------------------------------------
-// Shareable pattern strings
-
-const HEX = /^#?([0-9a-f]{6})$/i;
-
-export function encodePattern({ colors, rounds, twist, turn }) {
-  const p = new URLSearchParams();
-  p.set('c', colors.map((c) => c.replace('#', '')).join('.'));
-  p.set('r', String(rounds));
-  p.set('tw', String(Math.round(twist * 100) / 100)); // relative twist
-  if (turn === 'cw') p.set('turn', 'cw');
-  return p.toString();
-}
-
-export function decodePattern(str) {
-  const p = new URLSearchParams(str.replace(/^#/, ''));
-  const raw = (p.get('c') || '').split('.').filter(Boolean);
-  const colors = raw.map((c) => HEX.exec(c)).filter(Boolean).map((m) => `#${m[1].toLowerCase()}`);
-  if (colors.length !== raw.length || !isValidStrandCount(colors.length)) return null;
-  const rounds = Number(p.get('r'));
-  const twist = Number(p.get('tw'));
-  return {
-    colors,
-    rounds: Number.isFinite(rounds) && rounds > 0 ? Math.min(rounds, 200) : undefined,
-    twist: p.has('tw') && Number.isFinite(twist) ? twist : undefined,
-    turn: p.get('turn') === 'cw' ? 'cw' : 'ccw',
-  };
 }

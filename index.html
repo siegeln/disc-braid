@@ -11,7 +11,7 @@
   <header class="top">
     <div>
       <h1>Disk Braid Simulator <span class="zh">盘编模拟器</span></h1>
-      <p class="sub">Kumihimo · Kongo Gumi round braid. Colour the strands on the disk and preview the cord.</p>
+      <p class="sub">Kumihimo on a round disk. Colour the strands, choose how they move, and preview the cord.</p>
     </div>
     <div class="actions">
       <button id="share" type="button" title="Copy a link to this pattern, or a code to paste into Load pattern">Copy pattern</button>
@@ -69,25 +69,20 @@
             <input type="range" id="twist" min="-1.5" max="1.5" step="0.05" value="-0.5">
           </label>
           <button id="twistReset" type="button">Reset twist</button>
-          <label>After each step turn the disk
-            <select id="turn">
-              <option value="ccw">counter-clockwise (right pair comes to top)</option>
-              <option value="cw">clockwise (left pair comes to top)</option>
-            </select>
-          </label>
           <p class="hint">Twist only changes how steeply stitches lean on the finished cord, not which colours show. If a real braid spirals more or less steeply than the preview, adjust it here.</p>
         </details>
       </div>
     </section>
 
-    <section class="panel how" aria-label="How it braids">
-      <h2>Moves <span class="zh">编织动作</span></h2>
-      <ol>
-        <li>Take the <b>bottom-right</b> strand up to the right of the top pair.</li>
-        <li>Take the <b>top-left</b> strand down to the left of the bottom pair.</li>
-        <li>Turn the disk so the next pair is at the top. Repeat.</li>
-      </ol>
-      <p class="hint">One <i>round</i> means every pair has been to the top once. Strands at a dot only ever trade places with the dot opposite, so opposite dots decide each part of the pattern.</p>
+    <section class="panel how" aria-label="Movement rule">
+      <h2>Movement rule <span class="zh">编织动作</span></h2>
+      <div class="row">
+        <label for="rulePreset" class="sr-only">Start from</label>
+        <select id="rulePreset"></select>
+      </div>
+      <p id="ruleHint" class="hint"></p>
+      <div id="rule" class="rule"></div>
+      <p class="hint">The arrows on the disk show the first step. Steps repeat in order. A <i>round</i> is one step per dot. Strands land on the side of their new pair they arrive from.</p>
     </section>
   </main>
 
