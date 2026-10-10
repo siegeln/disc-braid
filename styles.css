@@ -179,3 +179,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .has-3d .no-3d { display: none; }
 .has-3d #cord { cursor: grab; background: radial-gradient(ellipse at 50% 35%, var(--canvas-hi), var(--canvas) 70%); }
 .has-3d #cord:active { cursor: grabbing; }
+.seg { display: inline-flex; gap: 0; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 8px 8px 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.has-3d .seg.only-3d { display: inline-flex; }

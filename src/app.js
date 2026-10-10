@@ -409,7 +409,11 @@ function drawPreview() {
   const cord = $('cord');
   let dpr = window.devicePixelRatio || 1;
   if (cord3d) {
-    if (surfaceShown !== surface) { cord3d.setSurface(surface); surfaceShown = surface; }
+    if (surfaceShown !== surface) {
+      cord3d.setSurface(surface);
+      surfaceShown = surface;
+      showMode(cord3d.mode);
+    }
   } else {
     dpr = sizeCanvas(cord);
     drawCord(cord, { surface, background, view: state.view, dpr });
@@ -468,12 +472,14 @@ function init() {
 
   $('rounds').value = state.rounds;
   $('rounds').addEventListener('input', (e) => { state.rounds = Number(e.target.value); renderOutputs(); scheduleUpdate({ palette: false }); });
-  cord3d = createCordView($('cord'));
+  cord3d = createCordView($('cord'), { onModeChange: showMode });
   document.body.classList.toggle('has-3d', Boolean(cord3d));
   $('view').value = state.view;
   $('view').addEventListener('input', (e) => { state.view = Number(e.target.value); renderOutputs(); drawPreview(); });
-  $('along').addEventListener('input', (e) => cord3d?.lookAlong(Number(e.target.value) / 100));
-  $('resetView').addEventListener('click', () => { $('along').value = 50; cord3d?.resetView(); });
+  $('along').addEventListener('input', (e) => { cord3d?.lookAlong(Number(e.target.value) / 100); showMode(cord3d?.mode); });
+  for (const b of document.querySelectorAll('[data-mode]')) {
+    b.addEventListener('click', () => { cord3d?.setMode(b.dataset.mode); showMode(b.dataset.mode); });
+  }
   $('twist').value = state.twist;
   $('twist').addEventListener('input', (e) => { state.twist = Number(e.target.value); renderOutputs(); scheduleUpdate({ palette: false }); });
   $('twistReset').addEventListener('click', () => { state.twist = DEFAULT_TWIST; $('twist').value = state.twist; update({ palette: false }); });
@@ -545,6 +551,11 @@ function init() {
 
   renderPresets();
   update();
+}
+
+function showMode(mode) {
+  for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+  if (cord3d) $('along').value = Math.round(cord3d.along() * 100);
 }
 
 function openLoad(text, copyMode = false) {

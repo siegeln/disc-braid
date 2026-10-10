@@ -47,7 +47,7 @@
       <div class="views">
         <figure class="cord-figure">
           <canvas id="cord" width="360" height="640" aria-label="3D view of the braided cord. Drag to turn it, scroll or pinch to zoom."></canvas>
-          <figcaption>Cord <span class="zh">成品</span> <span class="only-3d">· drag to turn it any way, scroll or pinch to zoom, double-tap to reset</span></figcaption>
+          <figcaption>Cord <span class="zh">成品</span> <span class="only-3d">· drag to turn it any way, scroll or pinch to zoom, double-tap for the close-up</span></figcaption>
         </figure>
         <figure>
           <canvas id="flat" width="260" height="640"></canvas>
@@ -62,12 +62,16 @@
         <label class="no-3d">Turn the cord <output id="viewOut"></output>
           <input type="range" id="view" min="0" max="359" step="1" value="270">
         </label>
-        <label class="only-3d">Look along the cord (zoom in first)
+        <label class="only-3d">Look along the cord
           <input type="range" id="along" min="0" max="100" step="1" value="50">
         </label>
         <div class="row">
           <label class="check"><input type="checkbox" id="spin"> Spin</label>
-          <button id="resetView" type="button" class="only-3d">Reset view</button>
+          <span class="seg only-3d" role="group" aria-label="View">
+            <button type="button" data-mode="close" aria-pressed="true">Close-up</button>
+            <button type="button" data-mode="straight" aria-pressed="false">Whole rope</button>
+            <button type="button" data-mode="coil" aria-pressed="false">Coiled</button>
+          </span>
         </div>
         <details>
           <summary>Advanced</summary>

@@ -2,11 +2,14 @@
 
 Preview a kumihimo (組み紐) disk braid before you braid it. Colour the strands on
 the disk, choose how the strands move, pick a length, and see the finished cord
-in 3D, plus a flat, unrolled chart of its whole surface.
+in 3D (turn it any way, zoom in, or coil the whole rope up), plus a flat,
+unrolled chart of its whole surface.
 
 ## Run it
 
-It's a static page with no build step and no dependencies:
+It's a static page with no build step. The only dependency is three.js, loaded
+from cdnjs for the 3D view; without it (or without WebGL) the page falls back
+to a simpler 2D cord view.
 
 ```sh
 npm start            # or: python3 -m http.server 8000
@@ -34,7 +37,10 @@ Any static host works too (for example GitHub Pages).
    per dot. Arrows on the disk show the first step. The editor says how many
    strands each move passes over, and warns when a move never crosses anything
    (it won't lock into the braid) or finds its pair empty.
-5. **Preview:** turn or spin the cord. *Copy pattern* copies a link (or, when the
+5. **Preview:** drag the cord to turn it any way, scroll or pinch to zoom.
+   *Close-up* starts at the newest end, *Whole rope* stands the full length
+   upright, and *Coiled* lays it in a flat spiral so a long rope (up to 150
+   rounds) fits on screen. *Look along the cord* slides the close-up along it. *Copy pattern* copies a link (or, when the
    page is embedded, a short code) that *Load pattern* reads back, so you can
    send a design to someone. *Save image* shows the cord as a PNG to save.
 
@@ -78,7 +84,8 @@ against real braids yet.
 | `src/braid.js` | Disk geometry, strand layout and labels, colour presets |
 | `src/rules.js` | Movement rules: presets, simulation, plain-language descriptions |
 | `src/pattern.js` | Shareable pattern codes |
-| `src/render.js` | Surface texture, 3D cord and unrolled views |
+| `src/render.js` | Surface texture (colour, height, normals) and the flat chart |
+| `src/cord3d.js` | WebGL 3D view (three.js r128 from cdnjs), with a 2D fallback in `render.js` |
 | `src/app.js` | UI wiring: disk editor, rule editor, palette, controls |
 | `test/` | Engine tests (`npm test`, Node 18+) |
 

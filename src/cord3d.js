@@ -7,6 +7,33 @@
 
 const RADIUS = 1;
 
+// Box blur (two passes, wrapping round the cord) for the displacement map.
+function blur(src, W, H, r) {
+  const tmp = new Float32Array(W * H);
+  const out = new Float32Array(W * H);
+  const n = 2 * r + 1;
+  for (let y = 0; y < H; y++) {
+    let acc = 0;
+    for (let k = -r; k <= r; k++) acc += src[y * W + ((k + W) % W)];
+    for (let x = 0; x < W; x++) {
+      tmp[y * W + x] = acc / n;
+      acc += src[y * W + ((x + r + 1) % W)] - src[y * W + ((x - r + W) % W)];
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) {
+      let acc = 0;
+      let cnt = 0;
+      for (let k = -r; k <= r; k++) {
+        const yy = y + k;
+        if (yy >= 0 && yy < H) { acc += tmp[yy * W + x]; cnt++; }
+      }
+      out[y * W + x] = acc / cnt;
+    }
+  }
+  return out;
+}
+
 function canvasFrom(width, height, fill) {
   const c = document.createElement('canvas');
   c.width = width;
@@ -35,7 +62,7 @@ function bindingTexture(THREE) {
   return tex;
 }
 
-export function createCordView(canvas) {
+export function createCordView(canvas, { onModeChange } = {}) {
   const THREE = window.THREE;
   if (!THREE) return null;
   let renderer;
@@ -46,20 +73,20 @@ export function createCordView(canvas) {
   }
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 0.9;
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(28, 1, 0.05, 2000);
 
-  scene.add(new THREE.HemisphereLight(0xfff8f0, 0x3a3836, 0.55));
-  const key = new THREE.DirectionalLight(0xffffff, 1.6);
+  scene.add(new THREE.HemisphereLight(0xfff8f0, 0x2a2826, 0.3));
+  const key = new THREE.DirectionalLight(0xffffff, 1.35);
   key.position.set(-3, 4, 5);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0xdfe8ff, 0.9);
+  const rim = new THREE.DirectionalLight(0xdfe8ff, 0.7);
   rim.position.set(4, 1, -4);
   scene.add(rim);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.2);
   fill.position.set(2, -3, 3);
   scene.add(fill);
 
@@ -67,12 +94,12 @@ export function createCordView(canvas) {
   scene.add(group);
 
   const cordMaterial = new THREE.MeshPhysicalMaterial({
-    roughness: 0.48,
+    roughness: 0.55,
     metalness: 0,
-    sheen: new THREE.Color(0.35, 0.35, 0.35),
+    sheen: new THREE.Color(0.12, 0.12, 0.12),
     normalScale: new THREE.Vector2(1, 1),
-    displacementScale: 0.07,
-    displacementBias: -0.035,
+    displacementScale: 0.045,
+    displacementBias: -0.03,
   });
   const bindTex = bindingTexture(THREE);
   const bindMaterial = new THREE.MeshPhysicalMaterial({
@@ -137,15 +164,29 @@ export function createCordView(canvas) {
   }
 
   function fit() {
-    // Frame the whole cord, standing upright.
     const vfov = (camera.fov * Math.PI) / 180;
     const aspect = camera.aspect || 0.6;
-    const needH = (length + 1.4) / 2 / Math.tan(vfov / 2);
-    const needW = (RADIUS * 2.6) / 2 / Math.tan(vfov / 2) / aspect;
-    fitDistance = Math.max(needH, needW) * 1.08;
-    view.distance = fitDistance;
-    view.target.set(0, 0, 0);
-    view.elevation = 0.12;
+    const tan = Math.tan(vfov / 2);
+    const needW = (RADIUS * 2.6) / 2 / tan / aspect;
+    fitDistance = Math.max((length + 1.4) / 2 / tan, needW) * 1.08;
+    if (mode === 'coil') {
+      // Look down on the coil from above and in front.
+      const span = coilOuter * 2.15;
+      view.distance = Math.max(span / 2 / tan, span / 2 / tan / aspect);
+      fitDistance = Math.max(fitDistance, view.distance);
+      view.target.set(0, 0, 0);
+      view.elevation = 1.0;
+    } else if (mode === 'straight') {
+      view.distance = fitDistance;
+      view.target.set(0, 0, 0);
+      view.elevation = 0.12;
+    } else {
+      // Close-up: about 14 cord-widths, starting at the newest end (nearest the disk).
+      const startLen = Math.min(length + 1.4, 28 * RADIUS);
+      view.distance = Math.max(startLen / 2 / tan, needW) * 1.08;
+      view.target.set(0, Math.max(0, (length + 1.4 - startLen) / 2), 0);
+      view.elevation = 0.12;
+    }
   }
 
   function setSurface(surface) {
@@ -171,7 +212,7 @@ export function createCordView(canvas) {
       }
     }));
     const dispMap = new THREE.CanvasTexture(canvasFrom(W, H, (d) => {
-      const h = surface.heightMap;
+      const h = blur(surface.heightMap, W, H, Math.max(1, Math.round(W / 160)));
       for (let k = 0, o = 0; k < W * H; k++, o += 4) {
         const v = Math.min(255, h[k] * 255);
         d[o] = d[o + 1] = d[o + 2] = v;
@@ -188,16 +229,92 @@ export function createCordView(canvas) {
     cordMaterial.needsUpdate = true;
 
     length = (H / W) * 2 * Math.PI * RADIUS;
-    const radial = Math.min(384, W);
-    const rows = Math.max(8, Math.min(1800, Math.round(H / 2)));
-    // Cylinder uv.u runs the opposite way round to the braid's angles, so mirror it.
-    map.repeat.x = normalMap.repeat.x = dispMap.repeat.x = -1;
+    texSize = [W, H];
+    buildMesh();
+    resize();
+    fit();
+    requestRender();
+  }
+
+  // ---- shape: the cord follows a path, straight up or coiled flat
+  let mode = 'close';
+  let texSize = [0, 0];
+  let coilOuter = 0;
+
+  function makePath() {
+    if (mode !== 'coil') {
+      return {
+        at: (t) => new THREE.Vector3(0, length / 2 - t * length, 0),
+        tangent: () => new THREE.Vector3(0, -1, 0),
+      };
+    }
+    // Archimedean spiral lying flat, newest end at the centre.
+    const gap = 2.5 * RADIUS;
+    const a = 2.4 * RADIUS;
+    const b = gap / (2 * Math.PI);
+    const theta = (-a + Math.sqrt(a * a + 2 * b * length)) / b; // arc length ≈ aθ + bθ²/2
+    const n = Math.max(64, Math.ceil((theta / (2 * Math.PI)) * 96));
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const th = (theta * i) / n;
+      const r = a + b * th;
+      pts.push(new THREE.Vector3(r * Math.cos(th), 0, r * Math.sin(th)));
+    }
+    coilOuter = a + b * theta + RADIUS;
+    const curve = new THREE.CatmullRomCurve3(pts);
+    return { at: (t) => curve.getPointAt(Math.min(1, t)), tangent: (t) => curve.getTangentAt(Math.min(1, t)) };
+  }
+
+  function buildMesh() {
+    if (cord) { group.remove(cord); cord.geometry.dispose(); }
+    for (const m of extras) { group.remove(m); m.geometry.dispose(); }
+    extras.length = 0;
+    const [W, H] = texSize;
+    if (!W) return;
+
+    // Enough vertices for the stitches to bulge; fine detail is in the normal map.
+    const radial = Math.min(192, W);
+    const rows = Math.max(8, Math.min(mode === 'coil' ? 1400 : 900, Math.round(H / 3)));
+    // Cylinder uv.u runs counter-clockwise seen from above, like the braid's angles.
     const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, length, radial, rows, true);
+    const path = makePath();
+    const up = new THREE.Vector3(0, 1, 0);
+    // Frame at each row: offset = x * A + z * B, keeping the cylinder's handedness
+    // (A x axis = B, where axis points towards the newest end, i.e. -tangent).
+    const frames = [];
+    for (let j = 0; j <= rows; j++) {
+      const t = j / rows;
+      const T = path.tangent(t).normalize();
+      const axis = T.clone().negate();
+      let A;
+      let B;
+      if (mode === 'coil') { A = axis.clone().cross(up).normalize(); B = up.clone(); } else { A = new THREE.Vector3(1, 0, 0); B = new THREE.Vector3(0, 0, 1); }
+      frames.push({ P: path.at(t), A, B });
+    }
+    const pos = geo.attributes.position;
+    const nor = geo.attributes.normal;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const j = Math.round(((length / 2 - y) / length) * rows);
+      const f = frames[Math.max(0, Math.min(rows, j))];
+      pos.setXYZ(i, f.P.x + x * f.A.x + z * f.B.x, f.P.y + x * f.A.y + z * f.B.y, f.P.z + x * f.A.z + z * f.B.z);
+      const nx = nor.getX(i);
+      const nz = nor.getZ(i);
+      nor.setXYZ(i, nx * f.A.x + nz * f.B.x, nx * f.A.y + nz * f.B.y, nx * f.A.z + nz * f.B.z);
+    }
+    pos.needsUpdate = true;
+    nor.needsUpdate = true;
+    geo.computeBoundingSphere();
     cord = new THREE.Mesh(geo, cordMaterial);
     group.add(cord);
 
     // Bound ends: a wrapped collar and a cap at each end.
-    for (const sgn of [1, -1]) {
+    for (const end of [0, 1]) {
+      const out = path.tangent(end).normalize();
+      if (end === 0) out.negate();
+      const base = path.at(end);
       const collarH = 0.9;
       const collarGeo = new THREE.CylinderGeometry(RADIUS * 1.09, RADIUS * 1.09, collarH, 96, 1, true);
       const tex = bindTex.clone();
@@ -206,15 +323,20 @@ export function createCordView(canvas) {
       const mat = bindMaterial.clone();
       mat.bumpMap = tex;
       const collar = new THREE.Mesh(collarGeo, mat);
-      collar.position.y = sgn * (length / 2 + collarH / 2 - 0.15);
-      const capGeo = new THREE.CircleGeometry(RADIUS * 1.09, 64);
-      const cap = new THREE.Mesh(capGeo, capMaterial);
-      cap.rotation.x = sgn > 0 ? -Math.PI / 2 : Math.PI / 2;
-      cap.position.y = sgn * (length / 2 + collarH - 0.15);
+      collar.quaternion.setFromUnitVectors(up, out);
+      collar.position.copy(base).addScaledVector(out, collarH / 2 - 0.15);
+      const cap = new THREE.Mesh(new THREE.CircleGeometry(RADIUS * 1.09, 64), capMaterial);
+      cap.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), out);
+      cap.position.copy(base).addScaledVector(out, collarH - 0.15);
       group.add(collar, cap);
       extras.push(collar, cap);
     }
-    resize();
+  }
+
+  function setMode(m) {
+    const reshape = (m === 'coil') !== (mode === 'coil');
+    mode = m;
+    if (reshape) buildMesh();
     fit();
     requestRender();
   }
@@ -259,10 +381,10 @@ export function createCordView(canvas) {
     view.distance = clampDist(view.distance * Math.exp(e.deltaY * 0.0012));
     requestRender();
   }, { passive: false });
-  canvas.addEventListener('dblclick', () => { fit(); requestRender(); });
+  canvas.addEventListener('dblclick', () => { setMode('close'); onModeChange?.(mode); });
 
   function clampDist(d) {
-    return Math.max(RADIUS * 3.2, Math.min(fitDistance * 1.6, d));
+    return Math.max(RADIUS * 3.2, Math.min(fitDistance * 1.3, d));
   }
 
   window.addEventListener('resize', requestRender);
@@ -272,7 +394,16 @@ export function createCordView(canvas) {
     setSpin(on) { spinning = on; requestRender(); },
     resetView() { fit(); requestRender(); },
     /** Move the point the camera looks at along the cord: 0 = bottom, 1 = top. */
-    lookAlong(t) { view.target.y = (t - 0.5) * length; requestRender(); },
+    lookAlong(t) {
+      if (mode === 'coil') setMode('close');
+      view.target.set(0, (t - 0.5) * length, 0);
+      requestRender();
+    },
+    /** Where the camera is looking along the cord: 0 = bottom, 1 = top. */
+    along() { return length ? view.target.y / length + 0.5 : 0.5; },
+    /** 'close' (straight, zoomed in), 'straight' (whole cord upright) or 'coil'. */
+    setMode,
+    get mode() { return mode; },
     snapshot() { render(); return canvas.toDataURL('image/png'); },
     render: requestRender,
   };
