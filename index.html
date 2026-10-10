@@ -45,9 +45,9 @@
 
     <section class="panel preview" aria-label="Braid preview">
       <div class="views">
-        <figure>
-          <canvas id="cord" width="360" height="640"></canvas>
-          <figcaption>Cord <span class="zh">成品</span></figcaption>
+        <figure class="cord-figure">
+          <canvas id="cord" width="360" height="640" aria-label="3D view of the braided cord. Drag to turn it, scroll or pinch to zoom."></canvas>
+          <figcaption>Cord <span class="zh">成品</span> <span class="only-3d">· drag to turn it any way, scroll or pinch to zoom, double-tap to reset</span></figcaption>
         </figure>
         <figure>
           <canvas id="flat" width="260" height="640"></canvas>
@@ -57,12 +57,18 @@
 
       <div class="controls">
         <label>Length <output id="roundsOut"></output>
-          <input type="range" id="rounds" min="4" max="60" step="1" value="16">
+          <input type="range" id="rounds" min="4" max="150" step="1" value="32">
         </label>
-        <label>Turn the cord <output id="viewOut"></output>
+        <label class="no-3d">Turn the cord <output id="viewOut"></output>
           <input type="range" id="view" min="0" max="359" step="1" value="270">
         </label>
-        <label class="check"><input type="checkbox" id="spin"> Spin</label>
+        <label class="only-3d">Look along the cord (zoom in first)
+          <input type="range" id="along" min="0" max="100" step="1" value="50">
+        </label>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="spin"> Spin</label>
+          <button id="resetView" type="button" class="only-3d">Reset view</button>
+        </div>
         <details>
           <summary>Advanced</summary>
           <label>Cord twist <output id="twistOut"></output>
@@ -100,6 +106,7 @@
     <form method="dialog"><button>Close</button></form>
   </dialog>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script type="module" src="src/app.js"></script>
 </body>
 </html>

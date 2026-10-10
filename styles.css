@@ -7,6 +7,7 @@
   --accent: #3d5a96;
   --error: #b3261e;
   --canvas: #fafaf8;
+  --canvas-hi: #ffffff;
   --disk: #e9e7e2;
   --disk-hole: #f3f3f1;
   color-scheme: light;
@@ -21,6 +22,7 @@
     --accent: #8fa8e0;
     --error: #f2948c;
     --canvas: #1f1d1a;
+    --canvas-hi: #34312c;
     --disk: #34302b;
     --disk-hole: #1b1917;
     color-scheme: dark;
@@ -28,7 +30,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #1b1917; --panel: #24211e; --ink: #eee7de; --muted: #a39a90; --line: #3a3530;
-  --accent: #8fa8e0; --error: #f2948c; --canvas: #1f1d1a; --disk: #34302b; --disk-hole: #1b1917; color-scheme: dark;
+  --accent: #8fa8e0; --error: #f2948c; --canvas: #1f1d1a; --canvas-hi: #34312c; --disk: #34302b; --disk-hole: #1b1917; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -171,3 +173,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .arrow-tag circle { fill: var(--accent); }
 .arrow-tag text { fill: var(--panel); font-size: 11px; font-weight: 700; }
 .step > *, .moves > li, .rule > * { min-width: 0; }
+
+.only-3d { display: none; }
+.has-3d .only-3d { display: revert; }
+.has-3d .no-3d { display: none; }
+.has-3d #cord { cursor: grab; background: radial-gradient(ellipse at 50% 35%, var(--canvas-hi), var(--canvas) 70%); }
+.has-3d #cord:active { cursor: grabbing; }

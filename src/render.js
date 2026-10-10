@@ -46,7 +46,10 @@ export function buildSurface({ stitches, stepY, colors, G, twist, maxHeight = In
   // Only the newest part fits on screen, so only build that much.
   const yLo = Math.max(stepY[trim], yHi - maxHeight);
 
-  const W = Math.max(16 * G, resolution);
+  // Long cords get fewer pixels round the cord, to keep the texture a
+  // manageable size (and within what phones' graphics chips accept).
+  const MAX_PIXELS = 1.4e6;
+  const W = Math.max(16 * G, Math.min(resolution, Math.floor(Math.sqrt(MAX_PIXELS / Math.max(0.01, yHi - yLo))), Math.floor(4096 / Math.max(0.01, yHi - yLo))));
   const H = Math.max(1, Math.ceil((yHi - yLo) * W));
   const pad = 0.05; // circumferences of stitches kept beyond each end
   const used = stitches.filter((s) => s.y > yLo - pad && s.y < yHi + pad);
@@ -75,18 +78,30 @@ export function buildSurface({ stitches, stepY, colors, G, twist, maxHeight = In
   const reach = Math.ceil(2.1 * unit);
   const invS2 = 1 / (STRETCH * STRETCH);
 
+  const PX = new Float32Array(used.length);
+  const PY = new Float32Array(used.length);
+  const GX = new Float32Array(used.length);
+  const GY = new Float32Array(used.length);
+  used.forEach((st, i) => {
+    PX[i] = (cordAngle(st, twist) / 360) * W;
+    PY[i] = (yHi - st.y) * W;
+    const [cx, cy] = col[i] ?? col[used.length - 1] ?? [0, -1];
+    const len = Math.hypot(cx, cy) || 1;
+    GX[i] = cx / len;
+    GY[i] = cy / len;
+  });
+
   const best = new Float32Array(W * H).fill(Infinity);
   const second = new Float32Array(W * H).fill(Infinity);
   const along = new Float32Array(W * H);
   const owner = new Int32Array(W * H).fill(-1);
 
   used.forEach((st, i) => {
-    const px = (cordAngle(st, twist) / 360) * W;
-    const py = (yHi - st.y) * W;
-    const [cx, cy] = col[i] ?? col[used.length - 1] ?? [0, -1];
-    const len = Math.hypot(cx, cy) || 1;
-    const gx = cx / len;
-    const gy = cy / len;
+    const px = PX[i];
+    const py = PY[i];
+    const gx = GX[i];
+    const gy = GY[i];
+    const len = Math.hypot(...(col[i] ?? col[used.length - 1] ?? [0, 1])) || 1;
     const newer = i * 1e-7; // ties go to the newer stitch, which lies on top
 
     const y0 = Math.max(0, Math.floor(py - reach));
@@ -117,23 +132,76 @@ export function buildSurface({ stitches, stepY, colors, G, twist, maxHeight = In
     }
   });
 
+  // Height: each stitch is a rounded bundle of fibres lying along it, lower
+  // at its ends.
+  const spacing = Math.max(1.4, unit / 9);
+  const height = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const k = y * W + x;
+      const i = owner[k];
+      if (i < 0) continue;
+      const e2 = Math.max(0, best[k]) / Math.max(1e-6, second[k]);
+      let h = Math.sqrt(Math.sqrt(Math.max(0, 1 - e2)));
+      h *= 1 - 0.35 * Math.min(1, along[k] * along[k]);
+      let dx = x + 0.5 - PX[i];
+      if (dx > W / 2) dx -= W; else if (dx < -W / 2) dx += W;
+      const dy = y + 0.5 - PY[i];
+      const f = (dy * GX[i] - dx * GY[i]) / spacing;
+      h += 0.035 * h * Math.cos(f * Math.PI * 2);
+      height[k] = h;
+    }
+  }
+
+  // Surface normals from the height map (wrapping round the cord).
+  const amp = 0.28 * unit; // bump height in pixels
+  const normal = new Float32Array(W * H * 3);
+  for (let y = 0; y < H; y++) {
+    const yu = Math.max(0, y - 1);
+    const yd = Math.min(H - 1, y + 1);
+    for (let x = 0; x < W; x++) {
+      const xl = x ? x - 1 : W - 1;
+      const xr = x === W - 1 ? 0 : x + 1;
+      const sx = ((height[y * W + xr] - height[y * W + xl]) / 2) * amp;
+      const sy = ((height[yd * W + x] - height[yu * W + x]) / (yd - yu || 1)) * amp;
+      const len = Math.sqrt(sx * sx + sy * sy + 1);
+      const o = (y * W + x) * 3;
+      normal[o] = -sx / len;
+      normal[o + 1] = -sy / len; // +y points down the texture
+      normal[o + 2] = 1 / len;
+    }
+  }
+
+  // Colour (with a little variation between fibres and darker crevices), and a
+  // lit version for the flat chart.
   const rgb = colors.map(hexToRgb);
+  const albedo = new Uint8ClampedArray(W * H * 4);
   const data = new Uint8ClampedArray(W * H * 4);
+  const L = [-0.45, -0.55, 0.7];
+  const Ll = Math.hypot(...L);
+  const [lx, ly, lz] = L.map((v) => v / Ll);
+  const hl = Math.hypot(lx, ly, lz + 1);
+  const [hx, hy, hz] = [lx / hl, ly / hl, (lz + 1) / hl];
   for (let k = 0; k < W * H; k++) {
     const i = owner[k];
     const o = k * 4;
-    if (i < 0) { data[o] = data[o + 1] = data[o + 2] = 40; data[o + 3] = 255; continue; } // a gap shows the core
+    albedo[o + 3] = data[o + 3] = 255;
+    if (i < 0) { albedo[o] = albedo[o + 1] = albedo[o + 2] = data[o] = data[o + 1] = data[o + 2] = 30; continue; } // a gap shows the core
     const c = rgb[used[i].strand];
-    // Darken towards the edge of each stitch and towards its two ends.
-    const edge = Math.sqrt(Math.max(0, best[k]) / Math.max(1e-6, second[k]));
-    let f = 1.08 - 0.5 * edge ** 3;
-    f *= 1 - 0.3 * Math.min(1, along[k] * along[k]);
-    data[o] = c[0] * f;
-    data[o + 1] = c[1] * f;
-    data[o + 2] = c[2] * f;
-    data[o + 3] = 255;
+    const h = height[k];
+    const ao = 0.55 + 0.45 * Math.min(1, h * 1.3);
+    const grain = 0.95 + ((Math.imul(k ^ (k >>> 7), 2654435761) >>> 24) / 255) * 0.1; // fibre-to-fibre variation
+    const n = k * 3;
+    const diff = Math.max(0, normal[n] * lx + normal[n + 1] * ly + normal[n + 2] * lz);
+    let spec = Math.max(0, normal[n] * hx + normal[n + 1] * hy + normal[n + 2] * hz);
+    spec *= spec; spec *= spec; spec *= spec; spec *= spec; spec *= spec; // ^32
+    const m = ao * grain;
+    const lit = 0.3 + 0.85 * diff;
+    const sp = 56 * spec;
+    albedo[o] = c[0] * m; albedo[o + 1] = c[1] * m; albedo[o + 2] = c[2] * m;
+    data[o] = c[0] * m * lit + sp; data[o + 1] = c[1] * m * lit + sp; data[o + 2] = c[2] * m * lit + sp;
   }
-  return { width: W, height: H, data, circumference: W };
+  return { width: W, height: H, data, albedo, heightMap: height, normal, circumference: W };
 }
 
 function textureCanvas(surface) {

@@ -5,6 +5,7 @@ import {
 } from './braid.js';
 import { decodePattern, encodePattern } from './pattern.js';
 import { buildSurface, drawCord, drawUnrolled, trimSteps } from './render.js';
+import { createCordView } from './cord3d.js';
 import {
   DEFAULT_RULE, POSITIONS, RULE_PRESETS, cloneRule, describeMove, describeTurn, distLabel,
   encodeRule, resolveDist, ruleWarnings, simulate as simulateRule,
@@ -17,7 +18,7 @@ const state = {
   colors: PRESETS[0].make(16, DEFAULT_PALETTE),
   palette: DEFAULT_PALETTE.slice(),
   brush: 1,
-  rounds: 16,
+  rounds: 32,
   twist: DEFAULT_TWIST,
   rule: cloneRule(DEFAULT_RULE),
   view: 270,
@@ -386,6 +387,8 @@ function sizeCanvas(canvas) {
 
 let sim = null;
 let surface = null;
+let cord3d = null; // WebGL view; null where WebGL isn't available
+let surfaceShown = null;
 function simulate() {
   const n = state.colors.length;
   const G = groupCount(n);
@@ -393,17 +396,8 @@ function simulate() {
   sim = simulateRule({ strands: n, rule: state.rule, steps });
   surface = buildSurface({
     stitches: sim.stitches, stepY: sim.stepY, colors: state.colors, G, twist: twistDegrees(state.twist, n),
-    maxHeight: visibleCircumferences(), resolution: 512,
+    resolution: 512,
   });
-}
-
-// How much cord (in circumferences) the bigger of the two views can show.
-function visibleCircumferences() {
-  const box = (id) => $(id).getBoundingClientRect();
-  const cord = box('cord');
-  const flat = box('flat');
-  const thinnest = 2 * Math.PI * 0.18 * Math.max(1, cord.width);
-  return Math.max(cord.height / thinnest, flat.height / Math.max(1, flat.width - 16)) + 0.1;
 }
 
 function bg() {
@@ -413,8 +407,13 @@ function bg() {
 function drawPreview() {
   const background = bg();
   const cord = $('cord');
-  const dpr = sizeCanvas(cord);
-  drawCord(cord, { surface, background, view: state.view, dpr });
+  let dpr = window.devicePixelRatio || 1;
+  if (cord3d) {
+    if (surfaceShown !== surface) { cord3d.setSurface(surface); surfaceShown = surface; }
+  } else {
+    dpr = sizeCanvas(cord);
+    drawCord(cord, { surface, background, view: state.view, dpr });
+  }
   const flat = $('flat');
   sizeCanvas(flat);
   drawUnrolled(flat, { surface, background, dpr });
@@ -469,8 +468,12 @@ function init() {
 
   $('rounds').value = state.rounds;
   $('rounds').addEventListener('input', (e) => { state.rounds = Number(e.target.value); renderOutputs(); scheduleUpdate({ palette: false }); });
+  cord3d = createCordView($('cord'));
+  document.body.classList.toggle('has-3d', Boolean(cord3d));
   $('view').value = state.view;
   $('view').addEventListener('input', (e) => { state.view = Number(e.target.value); renderOutputs(); drawPreview(); });
+  $('along').addEventListener('input', (e) => cord3d?.lookAlong(Number(e.target.value) / 100));
+  $('resetView').addEventListener('click', () => { $('along').value = 50; cord3d?.resetView(); });
   $('twist').value = state.twist;
   $('twist').addEventListener('input', (e) => { state.twist = Number(e.target.value); renderOutputs(); scheduleUpdate({ palette: false }); });
   $('twistReset').addEventListener('click', () => { state.twist = DEFAULT_TWIST; $('twist').value = state.twist; update({ palette: false }); });
@@ -516,7 +519,7 @@ function init() {
   });
 
   $('save').addEventListener('click', () => {
-    $('imageOut').src = $('cord').toDataURL('image/png');
+    $('imageOut').src = cord3d ? cord3d.snapshot() : $('cord').toDataURL('image/png');
     $('imageDialog').showModal();
   });
 
@@ -531,9 +534,13 @@ function init() {
       requestAnimationFrame(tick);
     } else last = 0;
   };
-  $('spin').addEventListener('change', (e) => { state.spin = e.target.checked; if (state.spin) requestAnimationFrame(tick); });
+  $('spin').addEventListener('change', (e) => {
+    state.spin = e.target.checked;
+    if (cord3d) cord3d.setSpin(state.spin);
+    else if (state.spin) requestAnimationFrame(tick);
+  });
 
-  window.addEventListener('resize', () => { simulate(); drawPreview(); });
+  window.addEventListener('resize', drawPreview);
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', drawPreview);
 
   renderPresets();
