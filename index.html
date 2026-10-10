@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Disk Braid Simulator</title>
+  <meta name="description" content="Kumihimo disk braiding simulator: set up strand colours on the disk and preview the finished round braid.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Disk Braid Simulator <span class="zh">盘编模拟器</span></h1>
+      <p class="sub">Kumihimo · Kongo Gumi round braid. Colour the strands on the disk and preview the cord.</p>
+    </div>
+    <div class="actions">
+      <button id="share" type="button">Copy link</button>
+      <button id="save" type="button">Save image</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel setup" aria-label="Disk set-up">
+      <div class="row">
+        <label for="strands">Strands <span class="zh">股数</span></label>
+        <select id="strands"></select>
+        <label class="check"><input type="checkbox" id="labels" checked> L/R labels</label>
+      </div>
+
+      <svg id="disk" viewBox="-210 -210 420 420" role="img" aria-label="Kumihimo disk, click a strand to colour it"></svg>
+      <p class="hint">Tap a strand to paint it with the selected colour. Tap a dot's number to paint both strands of that pair.</p>
+
+      <h2>Colours <span class="zh">配色</span></h2>
+      <div id="palette" class="palette"></div>
+
+      <h2>Layouts <span class="zh">布线</span></h2>
+      <div id="presets" class="presets"></div>
+      <div class="row tools">
+        <button id="mirror" type="button" title="Copy each right strand's colour to its mirror-image left strand (L1 = R1 …)">Mirror R → L</button>
+        <button id="rotate" type="button" title="Shift every colour one dot clockwise">Rotate one dot</button>
+        <button id="random" type="button">Random</button>
+      </div>
+    </section>
+
+    <section class="panel preview" aria-label="Braid preview">
+      <div class="views">
+        <figure>
+          <canvas id="cord" width="360" height="640"></canvas>
+          <figcaption>Cord <span class="zh">成品</span></figcaption>
+        </figure>
+        <figure>
+          <canvas id="flat" width="260" height="640"></canvas>
+          <figcaption>Unrolled surface (all the way round)</figcaption>
+        </figure>
+      </div>
+
+      <div class="controls">
+        <label>Length <output id="roundsOut"></output>
+          <input type="range" id="rounds" min="4" max="60" step="1" value="16">
+        </label>
+        <label>Turn the cord <output id="viewOut"></output>
+          <input type="range" id="view" min="0" max="359" step="1" value="270">
+        </label>
+        <label class="check"><input type="checkbox" id="spin"> Spin</label>
+        <details>
+          <summary>Advanced</summary>
+          <label>Cord twist <output id="twistOut"></output>
+            <input type="range" id="twist" min="-1.5" max="1.5" step="0.05" value="-0.5">
+          </label>
+          <button id="twistReset" type="button">Reset twist</button>
+          <label>After each step turn the disk
+            <select id="turn">
+              <option value="ccw">counter-clockwise (right pair comes to top)</option>
+              <option value="cw">clockwise (left pair comes to top)</option>
+            </select>
+          </label>
+          <p class="hint">Twist only changes how steeply stitches lean on the finished cord, not which colours show. If a real braid spirals more or less steeply than the preview, adjust it here.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel how" aria-label="How it braids">
+      <h2>Moves <span class="zh">编织动作</span></h2>
+      <ol>
+        <li>Take the <b>bottom-right</b> strand up to the right of the top pair.</li>
+        <li>Take the <b>top-left</b> strand down to the left of the bottom pair.</li>
+        <li>Turn the disk so the next pair is at the top. Repeat.</li>
+      </ol>
+      <p class="hint">One <i>round</i> means every pair has been to the top once. Strands at a dot only ever trade places with the dot opposite, so opposite dots decide each part of the pattern.</p>
+    </section>
+  </main>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "disc-braid",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kumihimo disk braid simulator: colour the strands, preview the cord.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node --test test/*.test.mjs"
+  }
+}
