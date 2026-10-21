@@ -112,8 +112,9 @@ export const RULE_PRESETS = [
   },
   {
     id: 'zigzag',
-    name: 'Switch direction each round',
-    hint: 'One round of Kongo Gumi, then one mirrored',
+    name: 'Diamond weave · zig-zag (Kongoh Gaeshi)',
+    hint: 'One round of Kongo Gumi, then one mirrored, so the spiral reverses each round. With the Diamonds colour layout this makes diamonds.',
+    layout: 'diamonds',
     rule: {
       steps: [
         { ...kongoStep, times: 'round' },
@@ -171,6 +172,10 @@ export function simulate({ strands, rule = DEFAULT_RULE, steps, onMove }) {
   const stepY = [0];
   let top = 0;
   let y = 0;
+  // How far the cord has twisted, in steps: each step twists it the way its
+  // strands travel (counter-clockwise +1, clockwise -1), so a mirrored rule
+  // gives a mirror-image cord and switching direction makes zig-zags.
+  let phase = 0;
 
   for (let s = 0; s < steps && seq.length; s++) {
     const step = seq[s % seq.length];
@@ -205,11 +210,12 @@ export function simulate({ strands, rule = DEFAULT_RULE, steps, onMove }) {
       target.splice(ins, 0, strand);
 
       const angle = mod(dotAngle(src, G) + (sign * d * 360) / G / 2, 360);
-      stitches.push({ strand, angle, step: s, y, h, dir: sign, crossings: cross, src, dst, rule: [step.index, mi] });
+      stitches.push({ strand, angle, step: s, phase, y, h, dir: sign, crossings: cross, src, dst, rule: [step.index, mi] });
       onMove?.({ step: s, move: mi, strand, src, dst, dir: sign, dist: d, land: m.land || 'near', ins, crossings: cross, top, before, after: groups.map((g) => g.slice()) });
     });
     top += step.turn || 0;
     y += h;
+    if (step.moves.length) phase += step.moves.reduce((a, m) => a + (m.dir === 'ccw' ? 1 : -1), 0) / step.moves.length;
     stepY.push(y);
   }
   for (const row of stats) for (const st of row) if (st.minCross === Infinity) st.minCross = 0;

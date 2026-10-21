@@ -61,21 +61,32 @@ export function buildSurface({ stitches, stepY, colors, G, twist, maxHeight = In
 
   // Column direction of each stitch, in pixels: towards the next stitch laid
   // at the same angle on the disk (or from the previous one, for the newest).
+  // Stitches laid travelling clockwise and counter-clockwise are chained
+  // separately, so where a rule switches direction each section keeps its own
+  // lean instead of being smeared across the switch.
   const half = 180 / G;
-  const col = new Array(used.length);
+  const fwd = new Array(used.length);
+  const back = new Array(used.length);
   const last = new Map();
   used.forEach((st, i) => {
     const bin = Math.round((st.angle - 90) / half);
-    const key = ((bin % (2 * G)) + 2 * G) % (2 * G);
+    const key = `${((bin % (2 * G)) + 2 * G) % (2 * G)}:${st.dir}`;
     const p = last.get(key);
-    if (p !== undefined) {
+    if (p !== undefined && st.y - used[p].y < 0.75 * G * st.h) {
       let da = cordAngle(st, twist) - cordAngle(used[p], twist);
       da = ((da + 540) % 360) - 180;
-      col[p] = [(da / 360) * W, -(st.y - used[p].y) * W];
-      if (!col[i]) col[i] = col[p];
+      const v = [(da / 360) * W, -(st.y - used[p].y) * W];
+      fwd[p] = v;
+      back[i] = v;
     }
     last.set(key, i);
   });
+  // A stitch with no partner in its own section leans like a typical one.
+  const typical = (dir) => {
+    const v = fwd.find((x, i) => x && used[i].dir === dir);
+    return v ?? [0, -1];
+  };
+  const col = used.map((st, i) => fwd[i] ?? back[i] ?? typical(st.dir));
 
   const area = (W * (yHi - yLo + 2 * pad) * W) / used.length; // pixels per stitch
   const unit = Math.sqrt(area);

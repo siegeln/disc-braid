@@ -227,3 +227,42 @@ test('a strand can go between the two strands of its new pair', () => {
   assert.equal(encodeRule(rule), 'TRa1m/0');
   assert.deepEqual(decodeRule('TRa1m/0'), rule);
 });
+
+test('a tutorial answer becomes a checked rule, colours and all', async () => {
+  const { parseAnswer, buildPrompt } = await import('../src/tutorial.js');
+  const prompt = buildPrompt('Move the bottom right strand up…', { strands: 8, imageCount: 2 });
+  assert.match(prompt, /2 screenshots/);
+  const dots = Array.from({ length: 4 }, (_, g) => ({ dot: g + 1, ccw: g % 2 ? '#000000' : '#FFFFFF', cw: g % 2 ? '#000000' : '#ffffff' }));
+  const r = parseAnswer({
+    ok: true, strands: 8, name: 'Kongo', summary: 'Standard round braid.', unsure: [],
+    rule: { steps: [{ moves: [{ from: 'BR', dir: 'ccw', dist: 'opp', land: 'near' }, { from: 'TL', dir: 'ccw', dist: 'opp' }], turn: 1, times: 1 }] },
+    colors: { dots },
+  }, { strands: 16 });
+  assert.equal(r.ok, true);
+  assert.equal(r.strands, 8);
+  assert.equal(encodeRule(r.rule), 'BRao,TLao/1');
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.colors, ['#ffffff', '#ffffff', '#000000', '#000000', '#ffffff', '#ffffff', '#000000', '#000000']);
+});
+
+test('bad or unbraidable tutorial answers are caught', async () => {
+  const { parseAnswer } = await import('../src/tutorial.js');
+  assert.equal(parseAnswer(null, { strands: 16 }).ok, false);
+  assert.equal(parseAnswer({ ok: false, summary: 'Square plate' }, { strands: 16 }).ok, false);
+  const junk = parseAnswer({ ok: true, rule: { steps: [{ moves: [{ from: 'XX', dir: 'up', dist: -3 }] }] } }, { strands: 16 });
+  assert.equal(junk.ok, false);
+  // A rule that leaves strands idle is still offered, with the problem spelt out.
+  const stuck = parseAnswer({ ok: true, strands: 16, rule: { steps: [{ moves: [{ from: 'TR', dir: 'ccw', dist: 1 }, { from: 'BL', dir: 'ccw', dist: 1 }], turn: 1 }] } }, { strands: 16 });
+  assert.equal(stuck.ok, true);
+  assert.ok(stuck.problems.some((p) => /never move/.test(p)));
+  // Out-of-range values are clamped to what the editor can show.
+  const wild = parseAnswer({ ok: true, rule: { steps: [{ moves: [{ from: 'BR', dir: 'ccw', dist: 'opp' }, { from: 'TL', dir: 'ccw', dist: 'opp' }], turn: 9, times: 500 }] } }, { strands: 16 });
+  assert.equal(wild.rule.steps[0].turn, 4);
+  assert.equal(wild.rule.steps[0].times, 16);
+});
+
+test('the diamond layout puts colour B on L2/R2 and L5/R5', () => {
+  const p = PRESETS.find((x) => x.id === 'diamonds');
+  const out = p.make(16, ['a', 'b']);
+  for (const s of strandLayout(16)) assert.equal(out[s.id], ['2', '5'].includes(s.label.slice(1)) ? 'b' : 'a', s.label);
+});

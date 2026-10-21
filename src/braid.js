@@ -92,7 +92,7 @@ export function twistDegrees(rel, n) {
 
 /** Angle of a stitch on the finished cord after twist is applied. */
 export function cordAngle(stitch, twist) {
-  return mod(stitch.angle + twist * stitch.step, 360);
+  return mod(stitch.angle + twist * (stitch.phase ?? stitch.step), 360);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +121,7 @@ export const PRESETS = [
   { id: 'halves', name: 'Half & half', hint: 'Right half A, left half B', make: (n, p) => bySide(n, (s) => (s.side === 'R' ? p[0] : p[1])) },
   { id: 'mirror', name: 'Mirror stripes', hint: 'L = R, banded from the top', make: (n, p) => bySide(n, (s) => p[Math.floor((Number(s.label.slice(1)) - 1) / 2) % p.length]) },
   { id: 'rainbow', name: 'Every dot different', hint: 'One palette colour per dot', make: (n, p) => fill(n, (g) => p[g % p.length]) },
+  { id: 'diamonds', name: 'Diamonds', hint: 'L2/R2 and L5/R5 in B · use with Diamond weave', make: (n, p) => bySide(n, (s) => (['2', '5'].includes(s.label.slice(1)) ? p[1] : p[0])) },
   { id: 'solid', name: 'Solid', hint: 'All one colour', make: (n, p) => fill(n, () => p[0]) },
 ];
 

@@ -6,6 +6,7 @@ import {
 import { decodePattern, encodePattern } from './pattern.js';
 import { buildSurface, drawCord, drawUnrolled, trimSteps } from './render.js';
 import { createCordView } from './cord3d.js';
+import { buildPrompt, parseAnswer } from './tutorial.js';
 import {
   DEFAULT_RULE, POSITIONS, RULE_PRESETS, cloneRule, describeMove, describeTurn, distLabel,
   encodeRule, resolveDist, resolveTimes, ruleWarnings, simulate as simulateRule, stepDetails,
@@ -488,7 +489,17 @@ function renderRule() {
   const current = presetIdFor(state.rule);
   for (const p of RULE_PRESETS) option(preset, p.id, p.name, p.id === current);
   if (current === 'custom') option(preset, 'custom', 'Your own rule', true);
-  $('ruleHint').textContent = RULE_PRESETS.find((p) => p.id === current)?.hint ?? 'Edited by you';
+  const presetNow = RULE_PRESETS.find((p) => p.id === current);
+  $('ruleHint').textContent = presetNow?.hint ?? 'Edited by you';
+  const layout = presetNow?.layout && PRESETS.find((p) => p.id === presetNow.layout);
+  if (layout) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'inline-btn';
+    b.textContent = `Use ${layout.name.toLowerCase()} colours`;
+    b.addEventListener('click', () => { state.colors = layout.make(state.colors.length, state.palette); update(); });
+    $('ruleHint').append(' ', b);
+  }
 
   const warnings = sim ? ruleWarnings(sim.stats, state.rule) : [];
 
@@ -896,11 +907,112 @@ function init() {
 
   renderPresets();
   update();
+  setupImport();
 }
 
 function showMode(mode) {
   for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
   if (cord3d) $('along').value = Math.round(cord3d.along() * 100);
+}
+
+// ------------------------------------------------------- import from a tutorial
+//
+// Only on the published page, where the viewer can let it ask Claude.
+
+const IMPORT_ERRORS = {
+  not_granted: 'Claude wasn\'t allowed for this page, so importing is off.',
+  sampling_disabled: 'Claude isn\'t available for this account.',
+  rate_limited: 'Too many requests just now. Try again in a little while.',
+  session_expired: 'Please sign in to Claude again, then retry.',
+  image_rejected: 'One of the screenshots couldn\'t be used. Try a different file (JPEG or PNG).',
+  prompt_too_large: 'That text is too long. Paste just the part with the steps.',
+  invalid_json: 'Claude\'s answer couldn\'t be read. Try again.',
+  refused: 'Claude couldn\'t help with that text.',
+};
+
+async function setupImport() {
+  const sample = await window.claude?.use?.('sample').catch(() => null);
+  if (!sample) return;
+  const box = $('importBox');
+  box.hidden = false;
+  const caps = await sample.limits().catch(() => null);
+  if (caps?.images) {
+    $('importShotsLabel').hidden = false;
+    $('importShots').accept = caps.images.mediaTypes.join(',');
+  }
+  let ctl = null;
+  $('importStop').addEventListener('click', () => ctl?.abort());
+  $('importGo').addEventListener('click', async () => {
+    const text = $('importText').value.trim();
+    const files = [...($('importShots').files ?? [])].slice(0, caps?.images?.maxCount ?? 0);
+    const out = $('importOut');
+    if (!text && !files.length) { out.textContent = 'Paste some tutorial text or add a screenshot first.'; return; }
+    ctl = new AbortController();
+    $('importGo').disabled = true;
+    $('importStop').hidden = false;
+    out.textContent = 'Reading the tutorial… this can take up to a minute.';
+    try {
+      const answer = await sample.json(buildPrompt(text, { strands: state.colors.length, imageCount: files.length }), {
+        signal: ctl.signal,
+        ...(files.length ? { images: files } : {}),
+      });
+      showImport(parseAnswer(answer, { strands: state.colors.length }));
+    } catch (e) {
+      if (e?.code === 'cancelled') out.textContent = '';
+      else out.textContent = IMPORT_ERRORS[e?.code] ?? 'Something went wrong reaching Claude. Try again.';
+      if (e?.code === 'not_granted' || e?.code === 'sampling_disabled') box.hidden = true;
+    } finally {
+      $('importGo').disabled = false;
+      $('importStop').hidden = true;
+    }
+  });
+}
+
+function showImport(r) {
+  const out = $('importOut');
+  out.replaceChildren();
+  const add = (tag, text, cls) => { const e = document.createElement(tag); e.textContent = text; if (cls) e.className = cls; out.append(e); return e; };
+  if (r.name) add('p', r.name, 'import-name');
+  if (r.summary) add('p', r.summary);
+  if (!r.ok) {
+    if (!r.summary) add('p', 'This tutorial couldn\'t be turned into a rule for a round disk.');
+    for (const p of r.problems) add('p', p, 'warn');
+    return;
+  }
+  if (r.unsure.length) {
+    add('p', 'Guessed:', 'import-sub');
+    const ul = document.createElement('ul');
+    for (const u of r.unsure) { const li = document.createElement('li'); li.textContent = u; ul.append(li); }
+    out.append(ul);
+  }
+  for (const p of r.problems) add('p', p, 'warn');
+  const row = document.createElement('div');
+  row.className = 'row';
+  const apply = (withColours) => {
+    if (r.strands !== state.colors.length) state.colors = resizeLayout(state.colors, r.strands);
+    if (withColours && r.colors) {
+      state.colors = r.colors.slice();
+      for (const c of r.colors) if (!state.palette.includes(c)) state.palette.push(c);
+    }
+    state.rule = cloneRule(r.rule);
+    resetWalk();
+    syncControls();
+    update();
+    add('p', 'Loaded. Press ▶ under the disk to check it step by step against the tutorial.', 'import-sub');
+  };
+  const useRule = document.createElement('button');
+  useRule.type = 'button';
+  useRule.textContent = r.strands !== state.colors.length ? `Use this rule (${r.strands} strands)` : 'Use this rule';
+  useRule.addEventListener('click', () => apply(false));
+  row.append(useRule);
+  if (r.colors) {
+    const both = document.createElement('button');
+    both.type = 'button';
+    both.textContent = 'Use the rule and its colours';
+    both.addEventListener('click', () => apply(true));
+    row.append(both);
+  }
+  out.append(row);
 }
 
 function openLoad(text, copyMode = false) {

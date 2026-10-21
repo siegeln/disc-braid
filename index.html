@@ -99,6 +99,18 @@
         <select id="rulePreset"></select>
       </div>
       <p id="ruleHint" class="hint"></p>
+      <details id="importBox" class="import" hidden>
+        <summary>Import from a tutorial</summary>
+        <p class="hint">Paste the tutorial's steps, or a video's description or transcript, in any language. Claude can't watch videos, so add screenshots of the moments that show the moves on the disk.</p>
+        <label for="importText" class="sr-only">Tutorial text</label>
+        <textarea id="importText" rows="5" placeholder="e.g. Move the bottom right strand up to the top right. Move the top left strand down to the bottom left. Turn the disk…"></textarea>
+        <label id="importShotsLabel" class="shots" hidden>Screenshots <input type="file" id="importShots" multiple></label>
+        <div class="row">
+          <button id="importGo" type="button">Turn into a rule</button>
+          <button id="importStop" type="button" hidden>Stop</button>
+        </div>
+        <div id="importOut" class="import-out" aria-live="polite"></div>
+      </details>
       <div id="rule" class="rule"></div>
       <p class="hint">The arrows on the disk show the first step. Steps repeat in order. A <i>round</i> is one step per dot. Strands land on the side of their new pair they arrive from.</p>
     </section>

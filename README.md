@@ -41,6 +41,15 @@ Any static host works too (for example GitHub Pages).
    when a move never crosses anything (it won't lock into the braid), finds its
    pair empty, or when some strands never move at all (they'd be buried inside
    the cord, so their colour wouldn't show; they're circled on the disk).
+   *Diamond weave / zig-zag (Kongoh Gaeshi)* reverses the spiral each round;
+   with the *Diamonds* colour layout (L2/R2 and L5/R5 in colour B) it gives a
+   diamond lattice on 8, 12 and 16 strands.
+   **Import from a tutorial** (on the published page only, where it can ask
+   Claude): paste a tutorial's steps or a video's description/transcript, in
+   any language, and optionally screenshots. Claude turns them into a rule
+   (and colours, if the tutorial gives them). The page checks the result for
+   moves that can't work before you use it. Claude can't watch videos, so
+   screenshots of the moves stand in for the video itself.
 5. **Walk through it:** under the disk, ▶ does the next step: the strands move
    along numbered arrows and the disk turns, with the instructions written out
    and where each strand ends up (e.g. "R1 ends up at dot 8, between L2 and L3").
@@ -94,6 +103,7 @@ against real braids yet.
 | `src/braid.js` | Disk geometry, strand layout and labels, colour presets |
 | `src/rules.js` | Movement rules: presets, simulation, plain-language descriptions |
 | `src/pattern.js` | Shareable pattern codes |
+| `src/tutorial.js` | Prompt and answer checking for importing a tutorial |
 | `src/render.js` | Surface texture (colour, height, normals) and the flat chart |
 | `src/cord3d.js` | WebGL 3D view (three.js r128 from cdnjs), with a 2D fallback in `render.js` |
 | `src/app.js` | UI wiring: disk editor, rule editor, palette, controls |
